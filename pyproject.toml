@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackjack-cli"
+version = "2025.0.0"
+dependencies = [
+  "typer",
+  "black"
+]
+requires-python = ">=3.8"
+
+[project.scripts]
+blackjack-app = "blackjack.cli:app"
