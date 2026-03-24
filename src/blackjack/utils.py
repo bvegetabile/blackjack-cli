@@ -117,7 +117,7 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
 
     # Top border with label.
     label_segment = f" {label} "
-    remaining = inner_width - len(label_segment) - 1  # -1 for leading ─
+    remaining = inner_width - _visible_len(label_segment) - 1  # -1 for leading ─
     top = f"\u250c\u2500{label_segment}" + "\u2500" * max(0, remaining) + "\u2510"
     lines.append(top)
 
