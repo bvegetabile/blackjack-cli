@@ -76,7 +76,7 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
         if player.player_type != "dealer":
             bet_line = f"Bet: ${hand.bet}"
         else:
-            bet_line = ""
+            bet_line = " "
 
         if len(player.hands) > 1:
             hand_blocks.append((f"Hand {idx + 1}:", card_lines, score_line, bet_line))
@@ -88,11 +88,13 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     for hand_label, card_lines, score_line, bet_line in hand_blocks:
         if hand_label:
             inner_lines.append(hand_label)
-        inner_lines.extend(card_lines)
-        if score_line:
-            inner_lines.append(score_line)
-        if bet_line:
-            inner_lines.append(bet_line)
+        if card_lines:
+            inner_lines.extend(card_lines)
+        else:
+            # Empty hand — pad to match card height (5 lines).
+            inner_lines.extend([""] * 5)
+        inner_lines.append(score_line)
+        inner_lines.append(bet_line)
 
     # Calculate box width from content if not provided.
     if box_width is None:
