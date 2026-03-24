@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 
-from .gameutils.card_display import render_hand, RED, GREEN, YELLOW, RESET
+from .gameutils.card_display import render_hand, RED, GREEN, YELLOW, BLUE, CYAN, RESET
 
 
 def clear_terminal():
@@ -31,10 +31,18 @@ def print_statement_with_deco(
         print_symbols(n_symbols=n_symbols, symbol=symbol)
 
 
-def print_game_header():
-    print_statement_with_deco(
-        "WELCOME TO BLACKJACK", symbol="*", before=True, after=True
-    )
+HEADER_WIDTH = 60
+
+
+def print_game_header(round_num=None):
+    border = "\u2550" * HEADER_WIDTH
+    if round_num is not None:
+        title = f"BLACKJACK  |  Round {round_num}"
+    else:
+        title = "WELCOME TO BLACKJACK"
+    print(border)
+    print(f"  {title.center(HEADER_WIDTH - 4)}")
+    print(border)
 
 
 def _visible_len(s):
@@ -119,6 +127,8 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     label_segment = f" {label} "
     remaining = inner_width - _visible_len(label_segment) - 1  # -1 for leading ─
     top = f"\u250c\u2500{label_segment}" + "\u2500" * max(0, remaining) + "\u2510"
+    if is_active:
+        top = f"{CYAN}{top}{RESET}"
     lines.append(top)
 
     # Content lines.
@@ -136,9 +146,7 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
 def print_table(player_list, active_player_index=None, dealer_reveal=False, round_num=None):
     """Clear the screen and redraw the full table state with players side-by-side."""
     clear_terminal()
-    print_game_header()
-    if round_num is not None:
-        print(f"  Round {round_num}")
+    print_game_header(round_num=round_num)
     print()
 
     # Collect player info for rendering.
@@ -207,21 +215,31 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False, roun
         print()
 
 
-def print_action_menu(can_split=False, can_double=False, can_surrender=False):
+MENU_WIDTH = 60
+
+
+def _key(k):
+    """Return a cyan-colored key label like [H]."""
+    return f"{CYAN}[{k}]{RESET}"
+
+
+def print_action_menu(can_split=False, can_double=False, can_surrender=False, dealer_upcard_str=None):
     """Print the available actions menu."""
-    print("\u2500" * 36)
-    line1 = " [H] Hit    [S] Stand    [Q] Quit"
+    print("\u2500" * MENU_WIDTH)
+    if dealer_upcard_str:
+        print(f"  Dealer shows: {dealer_upcard_str}")
+    line1 = f" {_key('H')} Hit    {_key('S')} Stand    {_key('Q')} Quit"
     print(line1)
     extras = []
     if can_double:
-        extras.append("[D] Double Down")
+        extras.append(f"{_key('D')} Double Down")
     if can_split:
-        extras.append("[P] Split")
+        extras.append(f"{_key('P')} Split")
     if can_surrender:
-        extras.append("[R] Surrender")
+        extras.append(f"{_key('R')} Surrender")
     if extras:
         print(" " + "   ".join(extras))
-    print("\u2500" * 36)
+    print("\u2500" * MENU_WIDTH)
 
 
 OUTCOME_COLORS = {
@@ -261,9 +279,9 @@ def print_results_table(player_list, dealer=None):
         dealer = player_list[-1]
 
     print()
-    print_symbols(n_symbols=50, symbol="\u2500")
-    print("RESULTS")
-    print_symbols(n_symbols=50, symbol="\u2500")
+    print("\u2550" * 50)
+    print("  RESULTS")
+    print("\u2550" * 50)
 
     for player in player_list[:-1]:
         label = f"Player {player.player_id}"
@@ -293,9 +311,9 @@ def print_results_table(player_list, dealer=None):
             hand_label = label
             if len(player.hands) > 1:
                 hand_label = f"{label} (Hand {hand_idx + 1})"
-            print(f"  {hand_label}: {colored_outcome} {payout_str}  (Cash: ${player.cash})")
+            print(f"  {hand_label}: {colored_outcome}   {payout_str}")
 
-    print_symbols(n_symbols=50, symbol="\u2500")
+    print("\u2500" * 50)
 
 
 def print_player_stats(player):
@@ -309,36 +327,53 @@ def print_player_stats(player):
     else:
         streak_str = "-"
 
+    w  = f"{GREEN}{s['wins']}{RESET}"
+    l  = f"{RED}{s['losses']}{RESET}"
+    p  = f"{YELLOW}{s['pushes']}{RESET}"
+    bj = f"{GREEN}{s['blackjacks']}{RESET}"
+    bu = f"{RED}{s['busts']}{RESET}"
     print(
-        f"  W:{s['wins']}  L:{s['losses']}  P:{s['pushes']}  "
-        f"BJ:{s['blackjacks']}  Bust:{s['busts']}  "
+        f"  W:{w}   L:{l}   P:{p}   "
+        f"BJ:{bj}   Bust:{bu}   "
         f"Streak:{streak_str}"
     )
+
+
+def print_bust_message():
+    """Print a prominent bust notification."""
+    print(f"\n  {RED}!!! BUST !!!{RESET}\n")
 
 
 def print_game_over(player, round_num):
     """Print a game over screen with session stats."""
     s = player.stats
     total_hands = s["wins"] + s["losses"] + s["pushes"] + s["surrenders"]
+    border = "\u2550" * 50
 
     print()
-    print_symbols(n_symbols=50, symbol="=")
-    print(f"  {RED}GAME OVER{RESET}")
-    print_symbols(n_symbols=50, symbol="=")
+    print(border)
+    print(f"  {RED}{'G A M E   O V E R'.center(46)}{RESET}")
+    print(border)
     print()
     print(f"  Rounds Played:  {round_num}")
     print(f"  Hands Played:   {total_hands}")
-    print(f"  Peak Cash:      ${s['peak_cash']}")
+    print(f"  Peak Cash:      {GREEN}${s['peak_cash']}{RESET}")
     print(f"  Final Cash:     ${player.cash}")
     print()
-    print(f"  Wins:           {s['wins']}")
-    print(f"  Losses:         {s['losses']}")
-    print(f"  Pushes:         {s['pushes']}")
-    print(f"  Blackjacks:     {s['blackjacks']}")
-    print(f"  Busts:          {s['busts']}")
+    print(f"  Wins:           {GREEN}{s['wins']}{RESET}")
+    print(f"  Losses:         {RED}{s['losses']}{RESET}")
+    print(f"  Pushes:         {YELLOW}{s['pushes']}{RESET}")
+    print(f"  Blackjacks:     {GREEN}{s['blackjacks']}{RESET}")
+    print(f"  Busts:          {RED}{s['busts']}{RESET}")
     print(f"  Surrenders:     {s['surrenders']}")
     print()
     if total_hands > 0:
         win_pct = s["wins"] / total_hands * 100
         print(f"  Win Rate:       {win_pct:.1f}%")
-    print_symbols(n_symbols=50, symbol="=")
+    print(border)
+
+
+def prompt_play_again():
+    """Print a styled play-again separator and return the user's input."""
+    print("\n" + "\u2500" * MENU_WIDTH)
+    return input(f"  {CYAN}[return]{RESET} Play again   {CYAN}[q]{RESET} Quit  >>> ")
