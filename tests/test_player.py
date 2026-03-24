@@ -94,3 +94,30 @@ def test_update_cash():
     assert p.cash == 150
     p.update_cash(-30)
     assert p.cash == 120
+
+
+# --- Multi-hand tests ---
+
+def test_player_multiple_hands():
+    from blackjack.gameutils.hand import Hand
+    p = Player(player_id=1, player_type="normal")
+    p.hands = [
+        Hand(cards=[Card("H", 8), Card("S", 3)]),
+        Hand(cards=[Card("D", 8), Card("C", 6)]),
+    ]
+    assert p.score_hand(hand_index=0) == 11
+    assert p.score_hand(hand_index=1) == 14
+
+
+def test_hand_property_backward_compat():
+    p = _make_player(Card("H", 10), Card("S", 7))
+    assert p.hand == [Card("H", 10), Card("S", 7)]
+    assert len(p.hand) == 2
+
+
+def test_reset_hands():
+    p = _make_player(Card("H", 10), Card("S", 7))
+    p.reset_hands()
+    assert len(p.hands) == 1
+    assert len(p.hand) == 0
+    assert p.score is None

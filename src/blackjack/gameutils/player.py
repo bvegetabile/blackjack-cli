@@ -1,66 +1,69 @@
+from .hand import Hand
+
 PLAYER_TYPES = [
     "normal",
     "dealer",
     "computer"
 ]
 
-RANK_SCORES = {
-    1: 11,
-    11: 10,
-    12: 10,
-    13: 10
-}
-
 
 class Player:
     def __init__(self, player_id=None, player_type=None, starting_cash=0):
         self.player_id = player_id
         self.player_type = player_type
-        self.hand = []
+        self.hands = [Hand()]
         self.score = None
         self.last_player_action = None
         self.cash = starting_cash
 
+    @property
+    def hand(self):
+        """Backward-compatible access to the first hand's cards."""
+        return self.hands[0].cards
+
     def update_cash(self, delta):
         self.cash += delta
 
-    def add_card_to_hand(self, new_card):
-        self.hand.append(new_card)
-        if len(self.hand) >= 2:
-            self.score = self.score_hand()
+    def add_card_to_hand(self, new_card, hand_index=0):
+        self.hands[hand_index].add_card(new_card)
+        if len(self.hands[hand_index].cards) >= 2:
+            self.score = self.hands[0].score()
 
-    def get_hand_as_str(self, hide_first_card=False):
+    def score_hand(self, hand_index=0):
+        return self.hands[hand_index].score()
+
+    def get_hand_as_str(self, hide_first_card=False, hand_index=0):
+        cards = self.hands[hand_index].cards
         cards_str = ', '.join([
             '??'
             if i == 0 and hide_first_card
             else str(x)
-            for i, x in enumerate(self.hand)]
+            for i, x in enumerate(cards)]
         )
         if not hide_first_card:
-            str_out = f"[{cards_str}], Score: {self.score}"
+            str_out = f"[{cards_str}], Score: {self.hands[hand_index].score()}"
         else:
             str_out = f"[{cards_str}]"
         return str_out
 
     def print_hand(self, hide_first_card=False, show_player_id=True):
+        from .card_display import render_hand
+
         if self.player_type != "dealer" and show_player_id:
             print(f"Player {self.player_id}")
         elif show_player_id:
             print("Dealer")
 
-        print(self.get_hand_as_str(hide_first_card=hide_first_card))
-        print(60*".")
+        for idx, hand in enumerate(self.hands):
+            if len(self.hands) > 1:
+                print(f"  Hand {idx + 1}:")
+            print(render_hand(hand.cards, hide_first=hide_first_card))
+            if not hide_first_card:
+                print(f"  Score: {hand.score()}")
+        print()
 
-    def score_hand(self):
-        score = 0
-        ace_count = 0
-        for card in self.hand:
-            card_score = RANK_SCORES.get(card.rank, card.rank)
-            score += card_score
-            if card.rank == 1:
-                ace_count += 1
-        while score > 21 and ace_count > 0:
-            score -= 10
-            ace_count -= 1
-        return score
-
+    def reset_hands(self):
+        """Reset to a single empty hand for a new round."""
+        self.hands = [Hand()]
+        self.score = None
+        self.last_player_action = None
