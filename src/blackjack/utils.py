@@ -131,52 +131,62 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False):
     print_game_header()
     print()
 
-    # Render each player's box.
-    boxes = []
+    # Collect player info for rendering.
+    player_info = []
     for i, player in enumerate(player_list):
         is_dealer = player.player_type == "dealer"
         hide = is_dealer and not dealer_reveal
         is_active = (i == active_player_index)
-        box = render_player_box(player, hide_first_card=hide, is_active=is_active)
-        boxes.append(box)
+        player_info.append((player, hide, is_active))
 
-    # Determine how many fit per row based on terminal width.
+    # First pass: render boxes to determine natural widths for row grouping.
+    natural_boxes = []
+    for player, hide, is_active in player_info:
+        box = render_player_box(player, hide_first_card=hide, is_active=is_active)
+        natural_boxes.append(box)
+
+    # Group into rows based on terminal width.
     term_width = shutil.get_terminal_size().columns
     gap = "  "
 
-    rows_of_boxes = []
+    row_groups = []  # list of lists of indices
     current_row = []
     current_width = 0
 
-    for box in boxes:
+    for idx, box in enumerate(natural_boxes):
         box_w = _visible_len(box[0])
         needed = box_w + (len(gap) if current_row else 0)
 
         if current_row and current_width + needed > term_width:
-            rows_of_boxes.append(current_row)
-            current_row = [box]
+            row_groups.append(current_row)
+            current_row = [idx]
             current_width = box_w
         else:
-            current_row.append(box)
+            current_row.append(idx)
             current_width += needed
 
     if current_row:
-        rows_of_boxes.append(current_row)
+        row_groups.append(current_row)
 
-    # Normalize box heights within each row and print.
-    for row in rows_of_boxes:
-        max_height = max(len(box) for box in row)
-        # Pad shorter boxes with empty lines matching their width.
-        padded_row = []
-        for box in row:
-            box_w = _visible_len(box[0])
+    # Second pass: re-render each row with uniform box width.
+    for group in row_groups:
+        max_box_w = max(_visible_len(natural_boxes[i][0]) for i in group)
+
+        row_boxes = []
+        for i in group:
+            player, hide, is_active = player_info[i]
+            box = render_player_box(player, hide_first_card=hide, is_active=is_active, box_width=max_box_w)
+            row_boxes.append(box)
+
+        # Normalize heights.
+        max_height = max(len(box) for box in row_boxes)
+        for box in row_boxes:
             while len(box) < max_height:
-                box.append("\u2502" + " " * (box_w - 2) + "\u2502")
-            padded_row.append(box)
+                box.append("\u2502" + " " * (max_box_w - 2) + "\u2502")
 
         # Print row by joining lines horizontally.
         for line_idx in range(max_height):
-            parts = [box[line_idx] for box in padded_row]
+            parts = [box[line_idx] for box in row_boxes]
             print(gap.join(parts))
         print()
 
