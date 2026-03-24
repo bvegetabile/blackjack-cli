@@ -13,6 +13,7 @@ class Hand:
         self.is_standing = False
         self.is_doubled = False
         self._is_surrendered = False
+        self.is_split_ace = False
 
     def add_card(self, card):
         self.cards.append(card)
@@ -34,6 +35,8 @@ class Hand:
         return self.score() > 21
 
     def can_split(self):
+        if self.is_split_ace:
+            return False  # No re-splitting aces.
         return len(self.cards) == 2 and self.cards[0].rank == self.cards[1].rank
 
     def can_double(self):

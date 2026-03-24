@@ -38,13 +38,19 @@ blackjack-app --init-cash 500 --minbid 10
 
 # Play with computer opponents and multiple decks
 blackjack-app --nplayers 3 --ndecks 2
+
+# Enable basic strategy hints
+blackjack-app --hints
+
+# Show hand history log when you quit or go broke
+blackjack-app --history
 ```
 
 ### Betting
 
-Each round begins with a bet. You'll be prompted to enter an amount (must be at least the table minimum). Your cash balance is shown in your player box.
+Each round begins with a bet. Press Enter to repeat your last bet (or use the table minimum on the first round). Your cash balance is shown in your player box.
 
-- **Game over**: If you can't afford the minimum bet, the game ends
+- **Game over**: If you can't afford the minimum bet, you'll see a session summary and can restart with fresh cash
 - **Computer players**: Bet randomly; if they go broke, there's a 50% chance they buy back in
 
 ### Game Controls
@@ -78,10 +84,15 @@ When the dealer's visible card is an Ace, you'll be offered insurance at half yo
 
 - Cards 2-10 are face value; J, Q, K are worth 10; Aces are 11 (or 1 if you'd bust)
 - Beat the dealer's hand without going over 21
-- Dealer hits on 17 or less
+- Dealer stands on all 17s (S17)
+- Split aces receive one card each and auto-stand (no re-splitting aces)
 - Computer players use the same strategy as the dealer (hit on 16 or less)
+- The shoe persists across rounds and reshuffles at ~75% penetration
 
-After each hand, press Enter to play again or `Q` to quit.
+### Learning Features
+
+- **`--hints`**: Shows basic strategy recommendations before each action (e.g., "Hint: Basic strategy says HIT")
+- **`--history`**: Displays a hand-by-hand log at the end of your session showing cards, bets, outcomes, and payouts
 
 ## Running Tests
 
