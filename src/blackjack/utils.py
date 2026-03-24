@@ -165,48 +165,41 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False, roun
         natural_boxes.append(box)
         natural_widths.append(_visible_len(box[0]))
 
-    # Group into rows. Use greedy approach: add boxes to row, but check
-    # that the uniform width (max in row) * count + gaps fits the terminal.
+    # Group into rows. Use greedy approach: sum actual natural widths + gaps.
     term_width = shutil.get_terminal_size().columns
     gap = "  "
     gap_w = len(gap)
 
     row_groups = []
     current_row = []
-    current_max_w = 0
+    current_row_w = 0
 
     for idx in range(len(natural_boxes)):
         w = natural_widths[idx]
-        tentative_max_w = max(current_max_w, w)
         tentative_count = len(current_row) + 1
-        total_w = tentative_max_w * tentative_count + gap_w * (tentative_count - 1)
+        total_w = current_row_w + w + gap_w * (tentative_count - 1)
 
         if current_row and total_w > term_width:
             row_groups.append(current_row)
             current_row = [idx]
-            current_max_w = w
+            current_row_w = w
         else:
             current_row.append(idx)
-            current_max_w = tentative_max_w
+            current_row_w += w
 
     if current_row:
         row_groups.append(current_row)
 
-    # Second pass: re-render each row with uniform box width.
+    # Second pass: use natural boxes as-is; only normalize heights within each row.
     for group in row_groups:
-        max_box_w = max(natural_widths[i] for i in group)
+        row_boxes = [natural_boxes[i] for i in group]
+        row_widths = [natural_widths[i] for i in group]
 
-        row_boxes = []
-        for i in group:
-            player, hide, is_active = player_info[i]
-            box = render_player_box(player, hide_first_card=hide, is_active=is_active, box_width=max_box_w)
-            row_boxes.append(box)
-
-        # Normalize heights.
+        # Normalize heights, padding each box with its own width.
         max_height = max(len(box) for box in row_boxes)
-        for box in row_boxes:
+        for box, w in zip(row_boxes, row_widths):
             while len(box) < max_height:
-                box.append("\u2502" + " " * (max_box_w - 2) + "\u2502")
+                box.append("\u2502" + " " * (w - 2) + "\u2502")
 
         # Print row by joining lines horizontally.
         for line_idx in range(max_height):
