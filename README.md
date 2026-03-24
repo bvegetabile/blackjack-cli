@@ -30,12 +30,22 @@ pip install -e ".[dev]"
 Start a game from the terminal:
 
 ```bash
-# Play solo against the dealer
+# Play solo against the dealer (default: $1000 cash, $25 minimum bet)
 blackjack-app
+
+# Customize starting cash and minimum bet
+blackjack-app --init-cash 500 --minbid 10
 
 # Play with computer opponents and multiple decks
 blackjack-app --nplayers 3 --ndecks 2
 ```
+
+### Betting
+
+Each round begins with a bet. You'll be prompted to enter an amount (must be at least the table minimum). Your cash balance is shown in your player box.
+
+- **Game over**: If you can't afford the minimum bet, the game ends
+- **Computer players**: Bet randomly; if they go broke, there's a 50% chance they buy back in
 
 ### Game Controls
 
@@ -45,9 +55,24 @@ Each turn you'll see your hand displayed as ASCII cards with your current score 
 |-----|--------|
 | `H` or Enter | Hit — draw another card |
 | `S` | Stand — keep your hand |
-| `D` | Double Down — draw one card and stand (first two cards only) |
-| `P` | Split — split a pair into two hands (matching ranks only) |
+| `D` | Double Down — double your bet, draw one card, and stand (first two cards only) |
+| `P` | Split — split a pair into two hands, each with its own bet (matching ranks only) |
+| `R` | Surrender — forfeit half your bet and end the hand (first action only) |
 | `Q` | Quit — exit the game |
+
+### Payouts
+
+| Outcome | Payout |
+|---------|--------|
+| Natural Blackjack (A + face card) | 3:2 (bet $100, win $150) |
+| Win | 1:1 |
+| Push (tie) | Bet returned |
+| Lose / Bust | Bet lost |
+| Surrender | Half bet returned |
+
+### Insurance
+
+When the dealer's visible card is an Ace, you'll be offered insurance at half your bet. If the dealer has blackjack, insurance pays 2:1.
 
 ### Rules
 

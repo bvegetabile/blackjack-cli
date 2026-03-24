@@ -54,9 +54,9 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     if player.player_type == "dealer":
         label = "Dealer"
     elif player.player_type == "normal":
-        label = f"Player {player.player_id}"
+        label = f"Player {player.player_id} (${player.cash})"
     else:
-        label = f"P{player.player_id} (cpu)"
+        label = f"P{player.player_id} (${player.cash})"
 
     if is_active:
         label = f">>> {label}"
@@ -73,19 +73,23 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
         else:
             score_line = "Score: ???"
 
+        bet_line = f"Bet: ${hand.bet}" if hand.bet > 0 else ""
+
         if len(player.hands) > 1:
-            hand_blocks.append((f"Hand {idx + 1}:", card_lines, score_line))
+            hand_blocks.append((f"Hand {idx + 1}:", card_lines, score_line, bet_line))
         else:
-            hand_blocks.append((None, card_lines, score_line))
+            hand_blocks.append((None, card_lines, score_line, bet_line))
 
     # Build inner content lines.
     inner_lines = []
-    for hand_label, card_lines, score_line in hand_blocks:
+    for hand_label, card_lines, score_line, bet_line in hand_blocks:
         if hand_label:
             inner_lines.append(hand_label)
         inner_lines.extend(card_lines)
         if score_line:
             inner_lines.append(score_line)
+        if bet_line:
+            inner_lines.append(bet_line)
 
     # Calculate box width from content if not provided.
     if box_width is None:
@@ -172,9 +176,9 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False):
         print()
 
 
-def print_action_menu(can_split=False, can_double=False):
+def print_action_menu(can_split=False, can_double=False, can_surrender=False):
     """Print the available actions menu."""
-    print("\u2500" * 28)
+    print("\u2500" * 36)
     line1 = " [H] Hit    [S] Stand    [Q] Quit"
     print(line1)
     extras = []
@@ -182,35 +186,45 @@ def print_action_menu(can_split=False, can_double=False):
         extras.append("[D] Double Down")
     if can_split:
         extras.append("[P] Split")
+    if can_surrender:
+        extras.append("[R] Surrender")
     if extras:
         print(" " + "   ".join(extras))
-    print("\u2500" * 28)
+    print("\u2500" * 36)
 
 
 OUTCOME_COLORS = {
     "WIN": GREEN,
+    "BLACKJACK": GREEN,
     "BUST": RED,
     "LOSE": RED,
     "PUSH": YELLOW,
+    "SURRENDER": YELLOW,
 }
 
 
-def print_results_table(player_list):
+def print_results_table(player_list, dealer=None):
     """Print formatted results comparing each player to the dealer."""
-    dealer = player_list[-1]
+    if dealer is None:
+        dealer = player_list[-1]
     dealer_score = dealer.score_hand()
 
     print()
-    print_symbols(n_symbols=40, symbol="\u2500")
+    print_symbols(n_symbols=50, symbol="\u2500")
     print("RESULTS")
-    print_symbols(n_symbols=40, symbol="\u2500")
+    print_symbols(n_symbols=50, symbol="\u2500")
 
     for player in player_list[:-1]:
         label = f"Player {player.player_id}"
         for hand_idx, hand in enumerate(player.hands):
             hand_score = hand.score()
-            if hand_score > 21:
+
+            if hand.is_surrendered:
+                outcome = "SURRENDER"
+            elif hand_score > 21:
                 outcome = "BUST"
+            elif hand.is_natural_blackjack() and not dealer.hands[0].is_natural_blackjack():
+                outcome = "BLACKJACK"
             elif dealer_score > 21:
                 outcome = "WIN"
             elif hand_score > dealer_score:
@@ -223,9 +237,20 @@ def print_results_table(player_list):
             color = OUTCOME_COLORS.get(outcome, "")
             colored_outcome = f"{color}{outcome}{RESET}"
 
+            # Show payout.
+            from .startgame import calculate_payout
+            payout = calculate_payout(hand, dealer.hands[0])
+            payout_int = int(payout)
+            if payout_int > 0:
+                payout_str = f"{GREEN}+${payout_int}{RESET}"
+            elif payout_int < 0:
+                payout_str = f"{RED}-${abs(payout_int)}{RESET}"
+            else:
+                payout_str = f"{YELLOW}$0{RESET}"
+
             hand_label = label
             if len(player.hands) > 1:
                 hand_label = f"{label} (Hand {hand_idx + 1})"
-            print(f"  {hand_label}: {colored_outcome}  (You: {hand_score} | Dealer: {dealer_score})")
+            print(f"  {hand_label}: {colored_outcome} {payout_str}  (Cash: ${player.cash})")
 
-    print_symbols(n_symbols=40, symbol="\u2500")
+    print_symbols(n_symbols=50, symbol="\u2500")

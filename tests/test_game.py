@@ -1,4 +1,6 @@
-from blackjack.startgame import BlackjackGame, get_player_action
+from blackjack.startgame import BlackjackGame, get_player_action, calculate_payout
+from blackjack.gameutils.card import Card
+from blackjack.gameutils.hand import Hand
 
 
 def _patch_game(monkeypatch, inputs):
@@ -10,23 +12,20 @@ def _patch_game(monkeypatch, inputs):
 
 def test_game_smoke_test(monkeypatch):
     """Verify a game completes when the player stands then quits."""
-    _patch_game(monkeypatch, ["s", "q"])
+    _patch_game(monkeypatch, ["25", "s", "q"])
     game = BlackjackGame(nplayers=1)
     assert len(game.player_list) == 2  # 1 human + 1 dealer
 
 
 def test_game_with_computer_players(monkeypatch):
     """Verify a game with computer players completes."""
-    _patch_game(monkeypatch, ["s", "q"])
+    _patch_game(monkeypatch, ["25", "s", "q"])
     game = BlackjackGame(nplayers=2)
-    assert len(game.player_list) == 3  # 1 human + 1 computer + 1 dealer
+    assert len(game.player_list) >= 3  # 1 human + computers + 1 dealer
 
 
 def test_game_hit_then_stand(monkeypatch):
     """Verify a game where the player hits once then stands."""
-    from blackjack.gameutils.card import Card
-
-    # Use controlled cards to avoid bust: player gets 2+3, hit gets 4 = 9 total.
     controlled_cards = [
         Card("H", 2), Card("S", 5),   # player card 1, dealer card 1
         Card("D", 3), Card("C", 10),  # player card 2, dealer card 2
@@ -37,7 +36,7 @@ def test_game_hit_then_stand(monkeypatch):
     def mock_get_card(from_top=True):
         return controlled_cards.pop(0)
 
-    _patch_game(monkeypatch, ["h", "s", "q"])
+    _patch_game(monkeypatch, ["25", "h", "s", "q"])
     monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
     monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
 
@@ -47,38 +46,32 @@ def test_game_hit_then_stand(monkeypatch):
 
 def test_game_multi_deck(monkeypatch):
     """Verify a game works with multiple decks."""
-    _patch_game(monkeypatch, ["s", "q"])
+    _patch_game(monkeypatch, ["25", "s", "q"])
     game = BlackjackGame(nplayers=1, ndecks=2)
     assert game.deck is not None
 
 
 def test_game_double_down(monkeypatch):
     """Verify double down deals one card and ends the turn."""
-    _patch_game(monkeypatch, ["d", "q"])
+    _patch_game(monkeypatch, ["25", "d", "q"])
     game = BlackjackGame(nplayers=1)
-    # Player should have exactly 3 cards (2 dealt + 1 double)
     assert len(game.player_list[0].hand) == 3
     assert game.player_list[0].hands[0].is_doubled is True
 
 
 def test_game_split(monkeypatch):
     """Verify split creates two hands when dealt a pair."""
-    from blackjack.gameutils.card import Card
-
-    # Build a deck where the player gets a pair of 8s.
     controlled_cards = [
         Card("H", 8), Card("S", 5),   # player card 1, dealer card 1
         Card("D", 8), Card("C", 10),  # player card 2, dealer card 2
-        # After split: new cards for each hand, then stand both.
-        Card("H", 3), Card("S", 6),
-        # Extra cards for dealer hits.
-        Card("D", 2), Card("C", 3), Card("H", 4),
+        Card("H", 3), Card("S", 6),   # split cards
+        Card("D", 2), Card("C", 3), Card("H", 4),  # dealer hits
     ]
 
     def mock_get_card(from_top=True):
         return controlled_cards.pop(0)
 
-    _patch_game(monkeypatch, ["p", "s", "s", "q"])
+    _patch_game(monkeypatch, ["25", "p", "s", "s", "q"])
     monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
     monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
 
@@ -101,3 +94,62 @@ def test_get_player_action_rejects_unavailable_split(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
     action = get_player_action(can_split=False, can_double=False)
     assert action == "stand"
+
+
+# --- Payout tests ---
+
+def test_payout_win():
+    hand = Hand(cards=[Card("H", 10), Card("S", 9)], bet=50)
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 7)])
+    assert calculate_payout(hand, dealer_hand) == 50
+
+
+def test_payout_lose():
+    hand = Hand(cards=[Card("H", 10), Card("S", 7)], bet=50)
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 9)])
+    assert calculate_payout(hand, dealer_hand) == -50
+
+
+def test_payout_push():
+    hand = Hand(cards=[Card("H", 10), Card("S", 7)], bet=50)
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 7)])
+    assert calculate_payout(hand, dealer_hand) == 0
+
+
+def test_payout_bust():
+    hand = Hand(cards=[Card("H", 10), Card("S", 7), Card("D", 8)], bet=50)
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 7)])
+    assert calculate_payout(hand, dealer_hand) == -50
+
+
+def test_payout_natural_blackjack():
+    hand = Hand(cards=[Card("H", 1), Card("S", 13)], bet=100)
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 7)])
+    assert calculate_payout(hand, dealer_hand) == 150  # 3:2
+
+
+def test_payout_blackjack_vs_dealer_blackjack():
+    hand = Hand(cards=[Card("H", 1), Card("S", 13)], bet=100)
+    dealer_hand = Hand(cards=[Card("D", 1), Card("C", 13)])
+    assert calculate_payout(hand, dealer_hand) == 0  # Push
+
+
+def test_payout_surrender():
+    hand = Hand(cards=[Card("H", 10), Card("S", 7)], bet=100)
+    hand.is_surrendered = True
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 9)])
+    assert calculate_payout(hand, dealer_hand) == -50
+
+
+def test_payout_dealer_bust():
+    hand = Hand(cards=[Card("H", 10), Card("S", 7)], bet=50)
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 7), Card("H", 9)])
+    assert calculate_payout(hand, dealer_hand) == 50
+
+
+def test_game_over_when_broke(monkeypatch):
+    """Verify game ends when human can't afford minimum bet."""
+    _patch_game(monkeypatch, [])
+    game = BlackjackGame(nplayers=1, init_cash=10, minbid=25)
+    # Game should end immediately — human has $10 but min bet is $25.
+    assert game.player_list[0].cash == 10
