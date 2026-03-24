@@ -223,11 +223,13 @@ def _key(k):
     return f"{CYAN}[{k}]{RESET}"
 
 
-def print_action_menu(can_split=False, can_double=False, can_surrender=False, dealer_upcard_str=None):
+def print_action_menu(can_split=False, can_double=False, can_surrender=False, dealer_upcard_str=None, player_score=None):
     """Print the available actions menu."""
     print("\u2500" * MENU_WIDTH)
     if dealer_upcard_str:
         print(f"  Dealer shows: {dealer_upcard_str}")
+    if player_score is not None:
+        print(f"  Player shows: {player_score}")
     line1 = f" {_key('H')} Hit    {_key('S')} Stand    {_key('Q')} Quit"
     print(line1)
     extras = []

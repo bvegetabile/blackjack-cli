@@ -37,6 +37,7 @@ def get_player_action(can_split=False, can_double=False, can_surrender=False, sc
             can_double=can_double,
             can_surrender=can_surrender,
             dealer_upcard_str=dealer_upcard_str,
+            player_score=score,
         )
         prompt = ">>> "
         raw = input(prompt).strip().lower()
@@ -66,7 +67,7 @@ def get_player_bet(player, minbid, default_bet=None, round_num=None):
     default_bet = min(default_bet, player.cash)
     default_bet = max(default_bet, minbid)
 
-    from .utils import MENU_WIDTH, CYAN, RESET
+    from .utils import MENU_WIDTH
     if round_num is not None:
         print("\u2500" * MENU_WIDTH)
         print(f"  Round {round_num}  |  Cash: ${player.cash}")
