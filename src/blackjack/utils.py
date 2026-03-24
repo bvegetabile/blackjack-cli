@@ -73,7 +73,10 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
         else:
             score_line = "Score: ???"
 
-        bet_line = f"Bet: ${hand.bet}" if hand.bet > 0 else ""
+        if player.player_type != "dealer":
+            bet_line = f"Bet: ${hand.bet}"
+        else:
+            bet_line = ""
 
         if len(player.hands) > 1:
             hand_blocks.append((f"Hand {idx + 1}:", card_lines, score_line, bet_line))
