@@ -53,13 +53,21 @@ def get_player_action(can_split=False, can_double=False, can_surrender=False, sc
         return action
 
 
-def get_player_bet(player, minbid):
-    """Prompt the human player for their bet amount."""
+def get_player_bet(player, minbid, default_bet=None):
+    """Prompt the human player for their bet amount. Enter uses default_bet."""
+    if default_bet is None:
+        default_bet = minbid
+    # Clamp default to what the player can afford.
+    default_bet = min(default_bet, player.cash)
+    default_bet = max(default_bet, minbid)
+
     while True:
         try:
-            raw = input(f"Place your bet (min ${minbid}, cash ${player.cash}) >>> ").strip()
+            raw = input(f"Bet (enter=${default_bet}) >>> ").strip()
             if raw.lower() in ('q', 'quit'):
                 return None
+            if raw == '':
+                return default_bet
             bet = int(raw)
             if bet < minbid:
                 print(f"Minimum bet is ${minbid}.")
@@ -129,6 +137,7 @@ class BlackjackGame:
         self.player_list.append(self.dealer)
 
         # Game loop.
+        last_bet = None
         while True:
             human = self.player_list[0]
 
@@ -160,13 +169,11 @@ class BlackjackGame:
             if init_shuffled:
                 self.deck.shuffle()
 
-            # Show table before betting (empty hands, cash visible).
-            print_table(self.player_list)
-
-            # Collect bets.
-            bet = get_player_bet(human, self.minbid)
+            # Collect bets (last round's hands stay visible).
+            bet = get_player_bet(human, self.minbid, default_bet=last_bet)
             if bet is None:
                 break
+            last_bet = bet
             human.hands[0].bet = bet
 
             # Computer bets.
