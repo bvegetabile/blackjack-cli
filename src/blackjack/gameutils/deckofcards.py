@@ -3,13 +3,14 @@ from .card import Card
 
 
 class DeckOfCards:
-    def __init__(self):
+    def __init__(self, ndecks=1):
         SUITS = ["D", "C", "S", "H"]
         RANKS = [x for x in range(1, 14)]
         self.cards = []
-        for suit in SUITS:
-            for rank in RANKS:
-                self.cards.append(Card(suit=suit, rank=rank))
+        for _ in range(ndecks):
+            for suit in SUITS:
+                for rank in RANKS:
+                    self.cards.append(Card(suit=suit, rank=rank))
 
         self.used_cards = []
 
@@ -36,16 +37,3 @@ class DeckOfCards:
 
         self.used_cards.append(card)
         return card
-
-
-if __name__ == "__main__":
-    # TESTING A DECK OF CARDS
-    deck = DeckOfCards()
-    deck.print_cards()
-    deck.shuffle()
-    deck.print_cards()
-    print(deck.get_card())
-    print(deck.get_card())
-    print(deck.get_card(from_top=False))
-    deck.print_cards(unused=True)
-    deck.print_cards(unused=False)
