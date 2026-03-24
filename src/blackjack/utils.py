@@ -139,38 +139,44 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False):
         is_active = (i == active_player_index)
         player_info.append((player, hide, is_active))
 
-    # First pass: render boxes to determine natural widths for row grouping.
+    # First pass: render boxes to determine natural widths.
     natural_boxes = []
+    natural_widths = []
     for player, hide, is_active in player_info:
         box = render_player_box(player, hide_first_card=hide, is_active=is_active)
         natural_boxes.append(box)
+        natural_widths.append(_visible_len(box[0]))
 
-    # Group into rows based on terminal width.
+    # Group into rows. Use greedy approach: add boxes to row, but check
+    # that the uniform width (max in row) * count + gaps fits the terminal.
     term_width = shutil.get_terminal_size().columns
     gap = "  "
+    gap_w = len(gap)
 
-    row_groups = []  # list of lists of indices
+    row_groups = []
     current_row = []
-    current_width = 0
+    current_max_w = 0
 
-    for idx, box in enumerate(natural_boxes):
-        box_w = _visible_len(box[0])
-        needed = box_w + (len(gap) if current_row else 0)
+    for idx in range(len(natural_boxes)):
+        w = natural_widths[idx]
+        tentative_max_w = max(current_max_w, w)
+        tentative_count = len(current_row) + 1
+        total_w = tentative_max_w * tentative_count + gap_w * (tentative_count - 1)
 
-        if current_row and current_width + needed > term_width:
+        if current_row and total_w > term_width:
             row_groups.append(current_row)
             current_row = [idx]
-            current_width = box_w
+            current_max_w = w
         else:
             current_row.append(idx)
-            current_width += needed
+            current_max_w = tentative_max_w
 
     if current_row:
         row_groups.append(current_row)
 
     # Second pass: re-render each row with uniform box width.
     for group in row_groups:
-        max_box_w = max(_visible_len(natural_boxes[i][0]) for i in group)
+        max_box_w = max(natural_widths[i] for i in group)
 
         row_boxes = []
         for i in group:
