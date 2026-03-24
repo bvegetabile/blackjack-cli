@@ -54,9 +54,9 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     if player.player_type == "dealer":
         label = "Dealer"
     elif player.player_type == "normal":
-        label = f"Player {player.player_id}"
+        label = f"Player {player.player_id} (${player.cash})"
     else:
-        label = f"P{player.player_id} (cpu)"
+        label = f"P{player.player_id} (${player.cash})"
 
     if is_active:
         label = f">>> {label}"
@@ -73,19 +73,28 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
         else:
             score_line = "Score: ???"
 
-        if len(player.hands) > 1:
-            hand_blocks.append((f"Hand {idx + 1}:", card_lines, score_line))
+        if player.player_type != "dealer":
+            bet_line = f"Bet: ${hand.bet}"
         else:
-            hand_blocks.append((None, card_lines, score_line))
+            bet_line = " "
+
+        if len(player.hands) > 1:
+            hand_blocks.append((f"Hand {idx + 1}:", card_lines, score_line, bet_line))
+        else:
+            hand_blocks.append((None, card_lines, score_line, bet_line))
 
     # Build inner content lines.
     inner_lines = []
-    for hand_label, card_lines, score_line in hand_blocks:
+    for hand_label, card_lines, score_line, bet_line in hand_blocks:
         if hand_label:
             inner_lines.append(hand_label)
-        inner_lines.extend(card_lines)
-        if score_line:
-            inner_lines.append(score_line)
+        if card_lines:
+            inner_lines.extend(card_lines)
+        else:
+            # Empty hand — pad to match card height (5 lines).
+            inner_lines.extend([""] * 5)
+        inner_lines.append(score_line)
+        inner_lines.append(bet_line)
 
     # Calculate box width from content if not provided.
     if box_width is None:
@@ -122,59 +131,75 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False):
     print_game_header()
     print()
 
-    # Render each player's box.
-    boxes = []
+    # Collect player info for rendering.
+    player_info = []
     for i, player in enumerate(player_list):
         is_dealer = player.player_type == "dealer"
         hide = is_dealer and not dealer_reveal
         is_active = (i == active_player_index)
-        box = render_player_box(player, hide_first_card=hide, is_active=is_active)
-        boxes.append(box)
+        player_info.append((player, hide, is_active))
 
-    # Determine how many fit per row based on terminal width.
+    # First pass: render boxes to determine natural widths.
+    natural_boxes = []
+    natural_widths = []
+    for player, hide, is_active in player_info:
+        box = render_player_box(player, hide_first_card=hide, is_active=is_active)
+        natural_boxes.append(box)
+        natural_widths.append(_visible_len(box[0]))
+
+    # Group into rows. Use greedy approach: add boxes to row, but check
+    # that the uniform width (max in row) * count + gaps fits the terminal.
     term_width = shutil.get_terminal_size().columns
     gap = "  "
+    gap_w = len(gap)
 
-    rows_of_boxes = []
+    row_groups = []
     current_row = []
-    current_width = 0
+    current_max_w = 0
 
-    for box in boxes:
-        box_w = _visible_len(box[0])
-        needed = box_w + (len(gap) if current_row else 0)
+    for idx in range(len(natural_boxes)):
+        w = natural_widths[idx]
+        tentative_max_w = max(current_max_w, w)
+        tentative_count = len(current_row) + 1
+        total_w = tentative_max_w * tentative_count + gap_w * (tentative_count - 1)
 
-        if current_row and current_width + needed > term_width:
-            rows_of_boxes.append(current_row)
-            current_row = [box]
-            current_width = box_w
+        if current_row and total_w > term_width:
+            row_groups.append(current_row)
+            current_row = [idx]
+            current_max_w = w
         else:
-            current_row.append(box)
-            current_width += needed
+            current_row.append(idx)
+            current_max_w = tentative_max_w
 
     if current_row:
-        rows_of_boxes.append(current_row)
+        row_groups.append(current_row)
 
-    # Normalize box heights within each row and print.
-    for row in rows_of_boxes:
-        max_height = max(len(box) for box in row)
-        # Pad shorter boxes with empty lines matching their width.
-        padded_row = []
-        for box in row:
-            box_w = _visible_len(box[0])
+    # Second pass: re-render each row with uniform box width.
+    for group in row_groups:
+        max_box_w = max(natural_widths[i] for i in group)
+
+        row_boxes = []
+        for i in group:
+            player, hide, is_active = player_info[i]
+            box = render_player_box(player, hide_first_card=hide, is_active=is_active, box_width=max_box_w)
+            row_boxes.append(box)
+
+        # Normalize heights.
+        max_height = max(len(box) for box in row_boxes)
+        for box in row_boxes:
             while len(box) < max_height:
-                box.append("\u2502" + " " * (box_w - 2) + "\u2502")
-            padded_row.append(box)
+                box.append("\u2502" + " " * (max_box_w - 2) + "\u2502")
 
         # Print row by joining lines horizontally.
         for line_idx in range(max_height):
-            parts = [box[line_idx] for box in padded_row]
+            parts = [box[line_idx] for box in row_boxes]
             print(gap.join(parts))
         print()
 
 
-def print_action_menu(can_split=False, can_double=False):
+def print_action_menu(can_split=False, can_double=False, can_surrender=False):
     """Print the available actions menu."""
-    print("\u2500" * 28)
+    print("\u2500" * 36)
     line1 = " [H] Hit    [S] Stand    [Q] Quit"
     print(line1)
     extras = []
@@ -182,35 +207,45 @@ def print_action_menu(can_split=False, can_double=False):
         extras.append("[D] Double Down")
     if can_split:
         extras.append("[P] Split")
+    if can_surrender:
+        extras.append("[R] Surrender")
     if extras:
         print(" " + "   ".join(extras))
-    print("\u2500" * 28)
+    print("\u2500" * 36)
 
 
 OUTCOME_COLORS = {
     "WIN": GREEN,
+    "BLACKJACK": GREEN,
     "BUST": RED,
     "LOSE": RED,
     "PUSH": YELLOW,
+    "SURRENDER": YELLOW,
 }
 
 
-def print_results_table(player_list):
+def print_results_table(player_list, dealer=None):
     """Print formatted results comparing each player to the dealer."""
-    dealer = player_list[-1]
+    if dealer is None:
+        dealer = player_list[-1]
     dealer_score = dealer.score_hand()
 
     print()
-    print_symbols(n_symbols=40, symbol="\u2500")
+    print_symbols(n_symbols=50, symbol="\u2500")
     print("RESULTS")
-    print_symbols(n_symbols=40, symbol="\u2500")
+    print_symbols(n_symbols=50, symbol="\u2500")
 
     for player in player_list[:-1]:
         label = f"Player {player.player_id}"
         for hand_idx, hand in enumerate(player.hands):
             hand_score = hand.score()
-            if hand_score > 21:
+
+            if hand.is_surrendered:
+                outcome = "SURRENDER"
+            elif hand_score > 21:
                 outcome = "BUST"
+            elif hand.is_natural_blackjack() and not dealer.hands[0].is_natural_blackjack():
+                outcome = "BLACKJACK"
             elif dealer_score > 21:
                 outcome = "WIN"
             elif hand_score > dealer_score:
@@ -223,9 +258,20 @@ def print_results_table(player_list):
             color = OUTCOME_COLORS.get(outcome, "")
             colored_outcome = f"{color}{outcome}{RESET}"
 
+            # Show payout.
+            from .startgame import calculate_payout
+            payout = calculate_payout(hand, dealer.hands[0])
+            payout_int = int(payout)
+            if payout_int > 0:
+                payout_str = f"{GREEN}+${payout_int}{RESET}"
+            elif payout_int < 0:
+                payout_str = f"{RED}-${abs(payout_int)}{RESET}"
+            else:
+                payout_str = f"{YELLOW}$0{RESET}"
+
             hand_label = label
             if len(player.hands) > 1:
                 hand_label = f"{label} (Hand {hand_idx + 1})"
-            print(f"  {hand_label}: {colored_outcome}  (You: {hand_score} | Dealer: {dealer_score})")
+            print(f"  {hand_label}: {colored_outcome} {payout_str}  (Cash: ${player.cash})")
 
-    print_symbols(n_symbols=40, symbol="\u2500")
+    print_symbols(n_symbols=50, symbol="\u2500")

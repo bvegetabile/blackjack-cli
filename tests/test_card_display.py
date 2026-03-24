@@ -88,8 +88,8 @@ def test_render_player_box_structure():
     p.add_card_to_hand(Card("S", 13))
 
     box = render_player_box(p)
-    # Box should have: top border + 5 card lines + score line + bottom border = 8 lines
-    assert len(box) == 8
+    # Box should have: top border + 5 card lines + score line + bet line + bottom border = 9 lines
+    assert len(box) == 9
     # Top should contain player label
     assert "Player 1" in box[0]
     # Bottom should be a border

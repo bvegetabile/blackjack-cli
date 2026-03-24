@@ -12,6 +12,7 @@ class Hand:
         self.bet = bet
         self.is_standing = False
         self.is_doubled = False
+        self._is_surrendered = False
 
     def add_card(self, card):
         self.cards.append(card)
@@ -37,3 +38,14 @@ class Hand:
 
     def can_double(self):
         return len(self.cards) == 2
+
+    def is_natural_blackjack(self):
+        return len(self.cards) == 2 and self.score() == 21
+
+    @property
+    def is_surrendered(self):
+        return self._is_surrendered
+
+    @is_surrendered.setter
+    def is_surrendered(self, value):
+        self._is_surrendered = value
