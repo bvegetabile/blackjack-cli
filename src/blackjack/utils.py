@@ -50,13 +50,21 @@ def _pad_to_visible(s, width):
 
 def render_player_box(player, hide_first_card=False, is_active=False, box_width=None):
     """Render a player's hand inside a box, returning a list of strings."""
-    # Build label.
+    # Build label with cash trend.
     if player.player_type == "dealer":
         label = "Dealer"
-    elif player.player_type == "normal":
-        label = f"Player {player.player_id} (${player.cash})"
     else:
-        label = f"P{player.player_id} (${player.cash})"
+        trend = ""
+        if hasattr(player, "prev_cash") and player.prev_cash != player.cash:
+            if player.cash > player.prev_cash:
+                trend = f" {GREEN}\u25b2{RESET}"
+            else:
+                trend = f" {RED}\u25bc{RESET}"
+
+        if player.player_type == "normal":
+            label = f"Player {player.player_id} (${player.cash}){trend}"
+        else:
+            label = f"P{player.player_id} (${player.cash}){trend}"
 
     if is_active:
         label = f">>> {label}"
@@ -125,10 +133,12 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     return lines
 
 
-def print_table(player_list, active_player_index=None, dealer_reveal=False):
+def print_table(player_list, active_player_index=None, dealer_reveal=False, round_num=None):
     """Clear the screen and redraw the full table state with players side-by-side."""
     clear_terminal()
     print_game_header()
+    if round_num is not None:
+        print(f"  Round {round_num}")
     print()
 
     # Collect player info for rendering.
@@ -224,11 +234,31 @@ OUTCOME_COLORS = {
 }
 
 
+def determine_outcome(hand, dealer_hand):
+    """Determine the outcome string for a hand vs dealer."""
+    if hand.is_surrendered:
+        return "SURRENDER"
+    if hand.score() > 21:
+        return "BUST"
+    if hand.is_natural_blackjack() and not dealer_hand.is_natural_blackjack():
+        return "BLACKJACK"
+    dealer_score = dealer_hand.score()
+    hand_score = hand.score()
+    if dealer_score > 21:
+        return "WIN"
+    if hand_score > dealer_score:
+        return "WIN"
+    if hand_score == dealer_score:
+        return "PUSH"
+    return "LOSE"
+
+
 def print_results_table(player_list, dealer=None):
     """Print formatted results comparing each player to the dealer."""
+    from .startgame import calculate_payout
+
     if dealer is None:
         dealer = player_list[-1]
-    dealer_score = dealer.score_hand()
 
     print()
     print_symbols(n_symbols=50, symbol="\u2500")
@@ -238,28 +268,19 @@ def print_results_table(player_list, dealer=None):
     for player in player_list[:-1]:
         label = f"Player {player.player_id}"
         for hand_idx, hand in enumerate(player.hands):
-            hand_score = hand.score()
+            outcome = determine_outcome(hand, dealer.hands[0])
 
-            if hand.is_surrendered:
-                outcome = "SURRENDER"
-            elif hand_score > 21:
-                outcome = "BUST"
-            elif hand.is_natural_blackjack() and not dealer.hands[0].is_natural_blackjack():
-                outcome = "BLACKJACK"
-            elif dealer_score > 21:
-                outcome = "WIN"
-            elif hand_score > dealer_score:
-                outcome = "WIN"
-            elif hand_score == dealer_score:
-                outcome = "PUSH"
-            else:
-                outcome = "LOSE"
+            # Record stats.
+            player.record_outcome(outcome)
 
             color = OUTCOME_COLORS.get(outcome, "")
             colored_outcome = f"{color}{outcome}{RESET}"
 
+            # Blackjack celebration.
+            if outcome == "BLACKJACK":
+                colored_outcome = f"{GREEN}*** BLACKJACK! ***{RESET}"
+
             # Show payout.
-            from .startgame import calculate_payout
             payout = calculate_payout(hand, dealer.hands[0])
             payout_int = int(payout)
             if payout_int > 0:
@@ -275,3 +296,49 @@ def print_results_table(player_list, dealer=None):
             print(f"  {hand_label}: {colored_outcome} {payout_str}  (Cash: ${player.cash})")
 
     print_symbols(n_symbols=50, symbol="\u2500")
+
+
+def print_player_stats(player):
+    """Print running stats for the human player."""
+    s = player.stats
+    streak = s["streak"]
+    if streak > 0:
+        streak_str = f"{GREEN}W{streak}{RESET}"
+    elif streak < 0:
+        streak_str = f"{RED}L{abs(streak)}{RESET}"
+    else:
+        streak_str = "-"
+
+    print(
+        f"  W:{s['wins']}  L:{s['losses']}  P:{s['pushes']}  "
+        f"BJ:{s['blackjacks']}  Bust:{s['busts']}  "
+        f"Streak:{streak_str}"
+    )
+
+
+def print_game_over(player, round_num):
+    """Print a game over screen with session stats."""
+    s = player.stats
+    total_hands = s["wins"] + s["losses"] + s["pushes"] + s["surrenders"]
+
+    print()
+    print_symbols(n_symbols=50, symbol="=")
+    print(f"  {RED}GAME OVER{RESET}")
+    print_symbols(n_symbols=50, symbol="=")
+    print()
+    print(f"  Rounds Played:  {round_num}")
+    print(f"  Hands Played:   {total_hands}")
+    print(f"  Peak Cash:      ${s['peak_cash']}")
+    print(f"  Final Cash:     ${player.cash}")
+    print()
+    print(f"  Wins:           {s['wins']}")
+    print(f"  Losses:         {s['losses']}")
+    print(f"  Pushes:         {s['pushes']}")
+    print(f"  Blackjacks:     {s['blackjacks']}")
+    print(f"  Busts:          {s['busts']}")
+    print(f"  Surrenders:     {s['surrenders']}")
+    print()
+    if total_hands > 0:
+        win_pct = s["wins"] / total_hands * 100
+        print(f"  Win Rate:       {win_pct:.1f}%")
+    print_symbols(n_symbols=50, symbol="=")
