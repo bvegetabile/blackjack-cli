@@ -74,8 +74,7 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
         else:
             label = f"P{player.player_id} (${player.cash}){trend}"
 
-    if is_active:
-        label = f">>> {label}"
+    # Active player is indicated by the cyan border — no label prefix needed.
 
     # Render cards for each hand.
     hand_blocks = []

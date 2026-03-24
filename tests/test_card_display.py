@@ -105,8 +105,9 @@ def test_render_player_box_active_marker():
     p.add_card_to_hand(Card("H", 1))
     p.add_card_to_hand(Card("S", 13))
 
+    from blackjack.gameutils.card_display import CYAN
     box = render_player_box(p, is_active=True)
-    assert ">>>" in box[0]
+    assert CYAN in box[0]
 
 
 def test_render_player_box_dealer_hidden():
