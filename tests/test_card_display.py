@@ -121,4 +121,4 @@ def test_render_player_box_dealer_hidden():
     box = render_player_box(p, hide_first_card=True)
     box_str = "\n".join(box)
     assert BLUE in box_str
-    assert "Score" not in box_str
+    assert "Score: ???" in box_str

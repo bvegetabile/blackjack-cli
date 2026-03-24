@@ -68,9 +68,10 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
         card_str = render_hand(hand.cards, hide_first=hide)
         card_lines = card_str.split("\n") if card_str else []
 
-        score_line = ""
         if not hide_first_card:
             score_line = f"Score: {hand.score()}"
+        else:
+            score_line = "Score: ???"
 
         if len(player.hands) > 1:
             hand_blocks.append((f"Hand {idx + 1}:", card_lines, score_line))
