@@ -149,7 +149,7 @@ def test_payout_dealer_bust():
 
 def test_game_over_when_broke(monkeypatch):
     """Verify game ends when human can't afford minimum bet."""
-    _patch_game(monkeypatch, [])
+    _patch_game(monkeypatch, ["n"])  # decline restart
     game = BlackjackGame(nplayers=1, init_cash=10, minbid=25)
     # Game should end immediately — human has $10 but min bet is $25.
     assert game.player_list[0].cash == 10
