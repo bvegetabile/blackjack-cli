@@ -71,3 +71,54 @@ def test_render_hand_hide_first():
 def test_render_empty_hand():
     result = render_hand([])
     assert result == ""
+
+
+def test_green_and_yellow_constants_exist():
+    from blackjack.gameutils.card_display import GREEN, YELLOW
+    assert GREEN == "\033[92m"
+    assert YELLOW == "\033[93m"
+
+
+def test_render_player_box_structure():
+    from blackjack.gameutils.player import Player
+    from blackjack.utils import render_player_box
+
+    p = Player(player_id=1, player_type="normal")
+    p.add_card_to_hand(Card("H", 1))
+    p.add_card_to_hand(Card("S", 13))
+
+    box = render_player_box(p)
+    # Box should have: top border + 5 card lines + score line + bottom border = 8 lines
+    assert len(box) == 8
+    # Top should contain player label
+    assert "Player 1" in box[0]
+    # Bottom should be a border
+    assert box[-1].startswith("\u2514")
+    assert box[-1].endswith("\u2518")
+
+
+def test_render_player_box_active_marker():
+    from blackjack.gameutils.player import Player
+    from blackjack.utils import render_player_box
+
+    p = Player(player_id=1, player_type="normal")
+    p.add_card_to_hand(Card("H", 1))
+    p.add_card_to_hand(Card("S", 13))
+
+    box = render_player_box(p, is_active=True)
+    assert ">>>" in box[0]
+
+
+def test_render_player_box_dealer_hidden():
+    from blackjack.gameutils.player import Player
+    from blackjack.utils import render_player_box
+    from blackjack.gameutils.card_display import BLUE
+
+    p = Player(player_id=None, player_type="dealer")
+    p.add_card_to_hand(Card("H", 1))
+    p.add_card_to_hand(Card("S", 13))
+
+    box = render_player_box(p, hide_first_card=True)
+    box_str = "\n".join(box)
+    assert BLUE in box_str
+    assert "Score: ???" in box_str
