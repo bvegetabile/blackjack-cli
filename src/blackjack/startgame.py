@@ -518,16 +518,19 @@ def startgame(
 
     print_game_header()
 
+    from .utils import HEADER_WIDTH
     print_statement_with_deco(
-        f"You've chosen {nplayers} computer opponents",
+        f"  You've chosen {nplayers} computer opponents",
         before=True,
         after=True,
+        n_symbols=HEADER_WIDTH,
         symbol="\u2500",
     )
 
     print_statement_with_deco(
-        statement=f"Playing the game with {ndecks} deck{decks_plural}.",
+        statement=f"  Playing the game with {ndecks} deck{decks_plural}.",
         after=True,
+        n_symbols=HEADER_WIDTH,
         symbol="\u2500",
     )
 
