@@ -9,6 +9,8 @@ from .utils import print_statement_with_deco
 from .utils import print_table
 from .utils import print_action_menu
 from .utils import print_results_table
+from .utils import print_player_stats
+from .utils import print_game_over
 from .gameutils.deckofcards import DeckOfCards
 from .gameutils.hand import Hand
 from .gameutils.player import Player
@@ -138,13 +140,27 @@ class BlackjackGame:
 
         # Game loop.
         last_bet = None
+        round_num = 0
         while True:
+            round_num += 1
             human = self.player_list[0]
 
             # Check if human is broke.
             if human.cash < self.minbid:
-                print_table(self.player_list, dealer_reveal=True)
-                print(f"\nYou're out of cash! Game over.")
+                print_table(self.player_list, dealer_reveal=True, round_num=round_num)
+                print_game_over(human, round_num - 1)
+                restart = input("\nPlay again with fresh cash? (y/n) >>> ").strip().lower()
+                if restart in ('y', 'yes'):
+                    human.cash = self.init_cash
+                    human.prev_cash = self.init_cash
+                    human.stats = {
+                        "wins": 0, "losses": 0, "pushes": 0,
+                        "blackjacks": 0, "busts": 0, "surrenders": 0,
+                        "peak_cash": self.init_cash, "streak": 0,
+                    }
+                    round_num = 0
+                    last_bet = None
+                    continue
                 break
 
             # Eliminate broke computer players or give them a chance to buy back in.
@@ -189,7 +205,7 @@ class BlackjackGame:
                     player.add_card_to_hand(new_card)
 
             # Show initial table.
-            print_table(self.player_list, active_player_index=0)
+            print_table(self.player_list, active_player_index=0, round_num=round_num)
 
             # Insurance check: if dealer's visible card (index 1) is an ace.
             insurance_bets = {}
@@ -210,7 +226,7 @@ class BlackjackGame:
 
             # Check for dealer natural blackjack.
             if self.dealer.hands[0].is_natural_blackjack():
-                print_table(self.player_list, dealer_reveal=True)
+                print_table(self.player_list, dealer_reveal=True, round_num=round_num)
                 print("Dealer has blackjack!")
 
                 # Settle insurance.
@@ -226,6 +242,7 @@ class BlackjackGame:
                         player.update_cash(int(payout))
 
                 print_results_table(self.player_list, self.dealer)
+                print_player_stats(human)
                 player_next = input("\nPress [return] to play again. Type [q] to quit. >>> ")
                 if player_next.strip().lower() == 'q':
                     break
@@ -272,7 +289,7 @@ class BlackjackGame:
                     if action == 'surrender':
                         hand.is_surrendered = True
                         hand.is_standing = True
-                        print_table(self.player_list, active_player_index=0)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num)
 
                     elif action == 'stand':
                         hand.is_standing = True
@@ -283,7 +300,7 @@ class BlackjackGame:
                         hand.is_doubled = True
                         hand.is_standing = True
                         human.score = human.hands[0].score()
-                        print_table(self.player_list, active_player_index=0)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num)
 
                     elif action == 'split':
                         split_card = hand.cards.pop(1)
@@ -292,13 +309,13 @@ class BlackjackGame:
                         hand.add_card(self.deck.get_card())
                         new_hand.add_card(self.deck.get_card())
                         human.score = human.hands[0].score()
-                        print_table(self.player_list, active_player_index=0)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num)
 
                     else:
                         # Hit.
                         hand.add_card(self.deck.get_card())
                         human.score = human.hands[0].score()
-                        print_table(self.player_list, active_player_index=0)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num)
                         if hand.is_bust():
                             print("Bust!")
 
@@ -321,7 +338,7 @@ class BlackjackGame:
                 self.dealer.add_card_to_hand(new_card)
 
             # Show final table with dealer revealed.
-            print_table(self.player_list, dealer_reveal=True)
+            print_table(self.player_list, dealer_reveal=True, round_num=round_num)
 
             # Calculate payouts.
             for player in self.player_list[:-1]:
@@ -329,8 +346,9 @@ class BlackjackGame:
                     payout = calculate_payout(hand, self.dealer.hands[0])
                     player.update_cash(int(payout))
 
-            # Print results.
+            # Print results and stats.
             print_results_table(self.player_list, self.dealer)
+            print_player_stats(human)
 
             player_next_game = input("\nPress [return] to play again. Type [q] to quit. >>> ")
             if player_next_game.strip().lower() == 'q':
