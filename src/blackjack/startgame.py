@@ -110,11 +110,80 @@ def calculate_payout(hand, dealer_hand):
         return -hand.bet
 
 
+def get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double):
+    """Return the basic strategy recommendation."""
+    score = hand.score()
+    is_soft = any(c.rank == 1 for c in hand.cards) and score <= 21 and (score - 10) != score
+    # Check if we actually have a soft hand (an ace counted as 11)
+    hard_total = sum(c.rank if c.rank <= 10 else 10 for c in hand.cards)
+    ace_count = sum(1 for c in hand.cards if c.rank == 1)
+    is_soft = ace_count > 0 and hard_total + 10 <= 21 and len(hand.cards) == 2
+
+    dealer = dealer_upcard_rank
+    if dealer >= 11:
+        dealer = 10  # Face cards
+    if dealer == 1:
+        dealer = 11  # Ace
+
+    # Pair splitting
+    if can_split:
+        pair_rank = hand.cards[0].rank
+        if pair_rank == 1:
+            return "SPLIT"
+        if pair_rank == 8:
+            return "SPLIT"
+        if pair_rank in (2, 3, 7) and dealer <= 7:
+            return "SPLIT"
+        if pair_rank == 4 and dealer in (5, 6):
+            return "SPLIT"
+        if pair_rank == 6 and dealer <= 6:
+            return "SPLIT"
+        if pair_rank == 9 and dealer not in (7, 10, 11):
+            return "SPLIT"
+
+    # Soft totals
+    if is_soft:
+        if score >= 19:
+            return "STAND"
+        if score == 18:
+            if can_double and dealer in (3, 4, 5, 6):
+                return "DOUBLE"
+            if dealer >= 9:
+                return "HIT"
+            return "STAND"
+        if score == 17 and can_double and dealer in (3, 4, 5, 6):
+            return "DOUBLE"
+        if score in (15, 16) and can_double and dealer in (4, 5, 6):
+            return "DOUBLE"
+        if score in (13, 14) and can_double and dealer in (5, 6):
+            return "DOUBLE"
+        return "HIT"
+
+    # Hard totals
+    if score >= 17:
+        return "STAND"
+    if score >= 13 and dealer <= 6:
+        return "STAND"
+    if score == 12 and dealer in (4, 5, 6):
+        return "STAND"
+    if score == 11:
+        return "DOUBLE" if can_double else "HIT"
+    if score == 10 and dealer <= 9:
+        return "DOUBLE" if can_double else "HIT"
+    if score == 9 and dealer in (3, 4, 5, 6):
+        return "DOUBLE" if can_double else "HIT"
+    return "HIT"
+
+
 class BlackjackGame:
-    def __init__(self, nplayers=1, ndecks=1, minbid=25, init_cash=1000, init_shuffled=True):
+    def __init__(self, nplayers=1, ndecks=1, minbid=25, init_cash=1000, init_shuffled=True,
+                 show_hints=False, show_history=False):
         self.nplayers = nplayers
         self.minbid = minbid
         self.init_cash = init_cash
+        self.show_hints = show_hints
+        self.show_history = show_history
+        self.hand_history = []
 
         # Create players once — they persist across rounds.
         self.player_list = []
@@ -138,6 +207,11 @@ class BlackjackGame:
         self.dealer = Player(player_id=None, player_type="dealer")
         self.player_list.append(self.dealer)
 
+        # Create shoe (persists across rounds).
+        self.deck = DeckOfCards(ndecks=ndecks)
+        if init_shuffled:
+            self.deck.shuffle()
+
         # Game loop.
         last_bet = None
         round_num = 0
@@ -149,6 +223,8 @@ class BlackjackGame:
             if human.cash < self.minbid:
                 print_table(self.player_list, dealer_reveal=True, round_num=round_num)
                 print_game_over(human, round_num - 1)
+                if self.show_history and self.hand_history:
+                    self._print_history()
                 restart = input("\nPlay again with fresh cash? (y/n) >>> ").strip().lower()
                 if restart in ('y', 'yes'):
                     human.cash = self.init_cash
@@ -180,10 +256,10 @@ class BlackjackGame:
             for player in self.player_list:
                 player.reset_hands()
 
-            # Initialize deck of cards + shuffle.
-            self.deck = DeckOfCards(ndecks=ndecks)
-            if init_shuffled:
-                self.deck.shuffle()
+            # Reshuffle shoe if penetration is high.
+            if self.deck.needs_reshuffle():
+                print("  Reshuffling the shoe...")
+                self.deck.reshuffle()
 
             # Collect bets (last round's hands stay visible).
             bet = get_player_bet(human, self.minbid, default_bet=last_bet)
@@ -273,6 +349,14 @@ class BlackjackGame:
                     if len(human.hands) > 1:
                         print(f"  Playing Hand {hand_idx + 1} of {len(human.hands)}")
 
+                    # Show basic strategy hint.
+                    if self.show_hints:
+                        dealer_upcard = self.dealer.hands[0].cards[1]
+                        hint = get_basic_strategy_hint(
+                            hand, dealer_upcard.rank, can_split, can_double
+                        )
+                        print(f"  Hint: Basic strategy says {hint}")
+
                     action = get_player_action(
                         can_split=can_split,
                         can_double=can_double,
@@ -295,6 +379,7 @@ class BlackjackGame:
                         hand.is_standing = True
 
                     elif action == 'double':
+                        human.update_cash(-hand.bet)  # Deduct additional bet.
                         hand.bet *= 2
                         hand.add_card(self.deck.get_card())
                         hand.is_doubled = True
@@ -303,11 +388,19 @@ class BlackjackGame:
                         print_table(self.player_list, active_player_index=0, round_num=round_num)
 
                     elif action == 'split':
+                        human.update_cash(-hand.bet)  # Deduct bet for new hand.
+                        splitting_aces = hand.cards[0].rank == 1
                         split_card = hand.cards.pop(1)
                         new_hand = Hand(cards=[split_card], bet=hand.bet)
                         human.hands.insert(hand_idx + 1, new_hand)
                         hand.add_card(self.deck.get_card())
                         new_hand.add_card(self.deck.get_card())
+                        # Split aces: one card each, auto-stand.
+                        if splitting_aces:
+                            hand.is_split_ace = True
+                            new_hand.is_split_ace = True
+                            hand.is_standing = True
+                            new_hand.is_standing = True
                         human.score = human.hands[0].score()
                         print_table(self.player_list, active_player_index=0, round_num=round_num)
 
@@ -332,19 +425,34 @@ class BlackjackGame:
                     new_card = self.deck.get_card()
                     player.add_card_to_hand(new_card)
 
-            # Dealer actions.
-            while self.dealer.score_hand() <= 17:
+            # Dealer actions (S17: stand on all 17s).
+            while self.dealer.score_hand() < 17:
                 new_card = self.deck.get_card()
                 self.dealer.add_card_to_hand(new_card)
 
             # Show final table with dealer revealed.
             print_table(self.player_list, dealer_reveal=True, round_num=round_num)
 
-            # Calculate payouts.
+            # Calculate payouts and record history.
             for player in self.player_list[:-1]:
                 for hand in player.hands:
                     payout = calculate_payout(hand, self.dealer.hands[0])
                     player.update_cash(int(payout))
+
+                    if player == human:
+                        from .utils import determine_outcome
+                        outcome = determine_outcome(hand, self.dealer.hands[0])
+                        self.hand_history.append({
+                            "round": round_num,
+                            "player_cards": [str(c) for c in hand.cards],
+                            "dealer_cards": [str(c) for c in self.dealer.hands[0].cards],
+                            "player_score": hand.score(),
+                            "dealer_score": self.dealer.score_hand(),
+                            "bet": hand.bet,
+                            "outcome": outcome,
+                            "payout": int(payout),
+                            "cash": human.cash,
+                        })
 
             # Print results and stats.
             print_results_table(self.player_list, self.dealer)
@@ -352,7 +460,28 @@ class BlackjackGame:
 
             player_next_game = input("\nPress [return] to play again. Type [q] to quit. >>> ")
             if player_next_game.strip().lower() == 'q':
+                if self.show_history and self.hand_history:
+                    self._print_history()
                 break
+
+
+    def _print_history(self):
+        """Print hand history log."""
+        print("\n" + "=" * 70)
+        print("HAND HISTORY")
+        print("=" * 70)
+        print(f"  {'Rd':>3}  {'Your Hand':<20} {'Dealer':<20} {'Bet':>5}  {'Result':<10} {'Payout':>7}  {'Cash':>6}")
+        print("-" * 70)
+        for h in self.hand_history:
+            cards = ", ".join(h["player_cards"])
+            dcards = ", ".join(h["dealer_cards"])
+            payout = h["payout"]
+            payout_str = f"+${payout}" if payout > 0 else f"-${abs(payout)}" if payout < 0 else "$0"
+            print(
+                f"  {h['round']:>3}  {cards:<20} {dcards:<20} ${h['bet']:>4}  "
+                f"{h['outcome']:<10} {payout_str:>7}  ${h['cash']:>5}"
+            )
+        print("=" * 70)
 
 
 def startgame(
@@ -362,6 +491,8 @@ def startgame(
     ndecks: Annotated[int, typer.Option(help="The number of decks")] = 1,
     minbid: Annotated[int, typer.Option(help="Casino table minimum bid")] = 25,
     init_cash: Annotated[int, typer.Option(help="Players initial wallet size.")] = 1000,
+    hints: Annotated[bool, typer.Option(help="Show basic strategy hints")] = False,
+    history: Annotated[bool, typer.Option(help="Show hand history at game over")] = False,
 ):
     # Clean inputs.
     if ndecks > 1:
@@ -392,4 +523,6 @@ def startgame(
         ndecks=ndecks,
         minbid=minbid,
         init_cash=init_cash,
+        show_hints=hints,
+        show_history=history,
     )

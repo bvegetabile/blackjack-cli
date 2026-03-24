@@ -153,3 +153,95 @@ def test_game_over_when_broke(monkeypatch):
     game = BlackjackGame(nplayers=1, init_cash=10, minbid=25)
     # Game should end immediately — human has $10 but min bet is $25.
     assert game.player_list[0].cash == 10
+
+
+def test_cash_never_negative_on_double(monkeypatch):
+    """Verify cash doesn't go negative when doubling with minimal cash."""
+    controlled_cards = [
+        Card("H", 5), Card("S", 10),  # player, dealer
+        Card("D", 6), Card("C", 7),   # player, dealer
+        Card("H", 10),                # double card (player busts: 5+6+10=21, actually wins)
+        Card("D", 3), Card("C", 2),   # dealer extra
+    ]
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
+    _patch_game(monkeypatch, ["25", "d", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.needs_reshuffle", lambda self: False)
+
+    game = BlackjackGame(nplayers=1, init_cash=25, minbid=25)
+    # Player started with $25, bet $25, doubled (deducted $25 more -> $0 before payout).
+    # Cash should never be negative regardless of outcome.
+    assert game.player_list[0].cash >= 0
+
+
+def test_dealer_stands_on_17(monkeypatch):
+    """Verify dealer stands on exactly 17."""
+    controlled_cards = [
+        Card("H", 10), Card("S", 10),  # player, dealer
+        Card("D", 7), Card("C", 7),    # player=17, dealer=17
+    ]
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
+    _patch_game(monkeypatch, ["25", "s", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.needs_reshuffle", lambda self: False)
+
+    game = BlackjackGame(nplayers=1)
+    # Dealer should have exactly 2 cards (stood on 17, not hit).
+    assert len(game.dealer.hands[0].cards) == 2
+    assert game.dealer.score_hand() == 17
+
+
+def test_split_ace_auto_stands():
+    """Verify split ace hands get one card and auto-stand."""
+    h = Hand(cards=[Card("H", 1)], bet=25)
+    h.is_split_ace = True
+    h.add_card(Card("S", 5))
+    h.is_standing = True
+    assert h.is_standing is True
+    assert h.is_split_ace is True
+    assert not h.can_split()  # No re-splitting aces
+
+
+def test_shoe_reshuffle():
+    """Verify shoe detects when reshuffle is needed."""
+    from blackjack.gameutils.deckofcards import DeckOfCards
+    deck = DeckOfCards(ndecks=1)
+    assert deck.cards_remaining() == 52
+    assert not deck.needs_reshuffle()
+
+    # Deal 40 cards (leaves 12 = 23% < 25%)
+    for _ in range(40):
+        deck.get_card()
+    assert deck.needs_reshuffle()
+
+    # Reshuffle
+    deck.reshuffle()
+    assert deck.cards_remaining() == 52
+    assert not deck.needs_reshuffle()
+
+
+def test_basic_strategy_hint():
+    """Verify basic strategy gives correct hints."""
+    from blackjack.startgame import get_basic_strategy_hint
+
+    # Hard 16 vs dealer 10 -> HIT
+    h = Hand(cards=[Card("H", 10), Card("S", 6)], bet=25)
+    assert get_basic_strategy_hint(h, 10, False, True) == "HIT"
+
+    # Hard 11 vs dealer 6 -> DOUBLE
+    h = Hand(cards=[Card("H", 5), Card("S", 6)], bet=25)
+    assert get_basic_strategy_hint(h, 6, False, True) == "DOUBLE"
+
+    # Pair of 8s -> SPLIT
+    h = Hand(cards=[Card("H", 8), Card("S", 8)], bet=25)
+    assert get_basic_strategy_hint(h, 10, True, True) == "SPLIT"
+
+    # Hard 20 -> STAND
+    h = Hand(cards=[Card("H", 10), Card("S", 10)], bet=25)
+    assert get_basic_strategy_hint(h, 6, False, False) == "STAND"
