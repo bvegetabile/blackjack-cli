@@ -4,23 +4,10 @@ from typing_extensions import Annotated
 from .utils import clear_terminal
 from .utils import print_game_header
 from .utils import print_statement_with_deco
-from .cardutils.deckofcards import DeckOfCards
+from .gameutils.deckofcards import DeckOfCards
+from .gameutils.player import Player
 
 # pipx install . --force
-
-PLAYER_TYPES = [
-    "normal",
-    "dealer",
-    "computer"
-]
-
-RANK_SCORES = {
-    1: 11,
-    11: 10,
-    12: 10,
-    13: 10
-}
-
 
 STAND_INPUTS = [
     'stand',
@@ -29,60 +16,8 @@ STAND_INPUTS = [
 ]
 
 
-class Player:
-    def __init__(self, player_id=None, player_type=None):
-        self.player_id = player_id
-        self.player_type = player_type
-        self.hand = []
-        self.score = None
-        self.last_player_action = None
-
-    def add_card_to_hand(self, new_card):
-        self.hand.append(new_card)
-        if len(self.hand) >= 2:
-            self.score = self.score_hand()
-
-    def get_hand_as_str(self, hide_first_card=False):
-        cards_str = ', '.join([
-            '??'
-            if i == 0 and hide_first_card
-            else str(x)
-            for i, x in enumerate(self.hand)]
-        )
-        if not hide_first_card:
-            str_out = f"[{cards_str}], Score: {self.score}"
-        else:
-            str_out = f"[{cards_str}]"
-        return str_out
-
-    def print_hand(self, hide_first_card=False, show_player_id=True):
-        if self.player_type != "dealer" and show_player_id:
-            print(f"Player {self.player_id}")
-        elif show_player_id:
-            print("Dealer")
-
-        print(self.get_hand_as_str(hide_first_card=hide_first_card))
-        print(60*".")
-
-    def score_hand(self,):
-        score_with_ace_1 = 0 
-        hand_score = 0
-        for card in self.hand:
-            card_score = RANK_SCORES.get(card.rank, card.rank)
-            hand_score += card_score
-            # Handling aces.
-            if card.rank == 1:
-                score_with_ace_1 += 1
-            else:
-                score_with_ace_1 += card_score
-        if hand_score > 21:
-            return score_with_ace_1
-        else:
-            return hand_score
-
-
 class BlackjackGame:
-    def __init__(self, nplayers=1, init_shuffled=True):
+    def __init__(self, nplayers=1, ndecks=1, init_shuffled=True):
         self.nplayers = nplayers
         self.game_state = None
         while self.game_state is None:
@@ -92,7 +27,7 @@ class BlackjackGame:
                 if player_id == 0:
                     self.player_list.append(
                         Player(
-                            player_id=player_id+1, 
+                            player_id=player_id+1,
                             player_type="normal"
                         )
                     )
@@ -111,7 +46,7 @@ class BlackjackGame:
             )
 
             # Initialize deck of cards + shuffle.
-            self.deck = DeckOfCards()
+            self.deck = DeckOfCards(ndecks=ndecks)
             if init_shuffled:
                 self.deck.shuffle()
 
@@ -144,7 +79,14 @@ class BlackjackGame:
                     print("Bust.")
                     break
 
-            # Dealer actions 
+            # Computer player actions (hit on <=16, stand on >=17)
+            for player in self.player_list[1:-1]:
+                while player.score_hand() <= 16:
+                    new_card = self.deck.get_card()
+                    player.add_card_to_hand(new_card)
+                player.print_hand()
+
+            # Dealer actions
             while self.player_list[-1].score_hand() <= 17:
                 new_card = self.deck.get_card()
                 self.player_list[-1].add_card_to_hand(new_card)
@@ -175,7 +117,6 @@ class BlackjackGame:
             player_next_game = input("Press [return] to play again. Type [q] to quit.>>> ")
             if player_next_game == 'q':
                 break
-
 
 
 def startgame(
@@ -210,5 +151,5 @@ def startgame(
         symbol="-",
     )
 
-    _ = BlackjackGame(nplayers=nplayers)
+    _ = BlackjackGame(nplayers=nplayers, ndecks=ndecks)
 
