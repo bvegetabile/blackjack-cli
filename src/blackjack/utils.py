@@ -114,7 +114,8 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     # Calculate box width from content if not provided.
     if box_width is None:
         content_width = max((_visible_len(line) for line in inner_lines), default=0)
-        content_width = max(content_width, _visible_len(label))
+        # +1 ensures the label fits with at least remaining=0 in the top border formula.
+        content_width = max(content_width, _visible_len(label) + 1)
         box_width = content_width + 4  # │ + space + content + space + │
 
     inner_width = box_width - 2  # space inside the │ borders
