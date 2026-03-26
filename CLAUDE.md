@@ -41,7 +41,13 @@ The CLI entry point is `src/blackjack/cli.py`, which uses Typer to expose the `s
 - `DeckOfCards` — manages card deck(s) with `ndecks` support, shuffle, draw (`get_card`), and tracks used cards.
 - `Player` — holds one or more `Hand` objects (for splits), tracks player type (`normal`/`computer`/`dealer`). Backward-compatible `hand` property returns first hand's cards.
 
-**`utils.py`** has display helpers: `print_table()` (clear + full redraw), `print_action_menu()`, `print_results_table()`, and terminal utilities.
+**`utils.py`** has display helpers and constants:
+- `HEADER_WIDTH = 60`, `MENU_WIDTH = 60` — shared width constants used across all separators and borders.
+- `print_game_header(round_num=None)` — `═` double-line border; embeds round number when provided.
+- `print_table()` — clears screen and redraws all player boxes side-by-side. Boxes size to their **natural card content width** (no uniform stretching). Active player box border is highlighted in cyan.
+- `render_player_box()` — renders one player's hand inside a unicode box. Width is `max(card_content, label+1) + 4` to guarantee the top-border label always fits without overhanging.
+- `print_action_menu(dealer_upcard_str, player_score)` — 60-char wide menu with cyan key labels; optionally shows dealer and player scores for at-a-glance comparison.
+- `print_results_table()`, `print_player_stats()`, `print_game_over()`, `print_bust_message()`, `prompt_play_again()` — round-end and session display helpers.
 
 **`startgame.py`** contains the `BlackjackGame` class (game loop in `__init__`), `get_player_action()` for input parsing via `ACTION_MAP`, and the `startgame()` Typer command.
 
