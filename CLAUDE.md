@@ -46,10 +46,14 @@ The CLI entry point is `src/blackjack/cli.py`, which uses Typer to expose the `s
 - `print_game_header(round_num=None)` — `═` double-line border; embeds round number when provided.
 - `print_table()` — clears screen and redraws all player boxes side-by-side. Boxes size to their **natural card content width** (no uniform stretching). Active player box border is highlighted in cyan.
 - `render_player_box()` — renders one player's hand inside a unicode box. Width is `max(card_content, label+1) + 4` to guarantee the top-border label always fits without overhanging.
-- `print_action_menu(dealer_upcard_str, player_score)` — 60-char wide menu with cyan key labels; optionally shows dealer and player scores for at-a-glance comparison.
+- `print_action_menu(can_split, can_double, can_surrender, dealer_upcard_str, player_score)` — 60-char wide menu with cyan key labels; only shows actions that are currently available; optionally shows dealer and player scores.
+- `print_blackjack_banner(player_name)` — celebratory double-border banner for natural blackjacks.
+- `animate_dealer_reveal(player_list, round_num, animation_delay)` — animates the dealer's hole card peeling back row by row; `animation_delay` controls seconds per row (0 = instant).
+- `determine_outcome(hand, dealer_hand)` — returns outcome string (WIN/LOSE/PUSH/BUST/BLACKJACK/SURRENDER/EVEN MONEY).
+- `_print_stats_footer(player)` — persistent W/L/P/BJ/Streak/Cash line shown below the table during active play.
 - `print_results_table()`, `print_player_stats()`, `print_game_over()`, `print_bust_message()`, `prompt_play_again()` — round-end and session display helpers.
 
-**`startgame.py`** contains the `BlackjackGame` class (game loop in `__init__`), `get_player_action()` for input parsing via `ACTION_MAP`, and the `startgame()` Typer command.
+**`startgame.py`** contains the `BlackjackGame` class (game loop in `__init__`), `get_player_action()` for input parsing via `ACTION_MAP`, `get_player_bet()` for the bet prompt (Enter repeats last bet), `calculate_payout(hand, dealer_hand)` for net cash changes, `get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double)` for the hints system, and the `startgame()` Typer command.
 
 ## Testing
 
