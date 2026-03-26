@@ -11,6 +11,8 @@ from .utils import print_action_menu
 from .utils import print_results_table
 from .utils import print_player_stats
 from .utils import print_game_over
+from .utils import print_bust_message
+from .utils import prompt_play_again
 from .gameutils.deckofcards import DeckOfCards
 from .gameutils.hand import Hand
 from .gameutils.player import Player
@@ -27,15 +29,17 @@ ACTION_MAP = {
 }
 
 
-def get_player_action(can_split=False, can_double=False, can_surrender=False, score=None):
+def get_player_action(can_split=False, can_double=False, can_surrender=False, score=None, dealer_upcard_str=None):
     """Display action menu, read input, validate, and return canonical action."""
     while True:
         print_action_menu(
             can_split=can_split,
             can_double=can_double,
             can_surrender=can_surrender,
+            dealer_upcard_str=dealer_upcard_str,
+            player_score=score,
         )
-        prompt = f"Score: {score} >>> " if score is not None else ">>> "
+        prompt = ">>> "
         raw = input(prompt).strip().lower()
         action = ACTION_MAP.get(raw)
 
@@ -55,7 +59,7 @@ def get_player_action(can_split=False, can_double=False, can_surrender=False, sc
         return action
 
 
-def get_player_bet(player, minbid, default_bet=None):
+def get_player_bet(player, minbid, default_bet=None, round_num=None):
     """Prompt the human player for their bet amount. Enter uses default_bet."""
     if default_bet is None:
         default_bet = minbid
@@ -63,9 +67,14 @@ def get_player_bet(player, minbid, default_bet=None):
     default_bet = min(default_bet, player.cash)
     default_bet = max(default_bet, minbid)
 
+    from .utils import MENU_WIDTH
+    if round_num is not None:
+        print("\u2500" * MENU_WIDTH)
+        print(f"  Round {round_num}  |  Cash: ${player.cash}")
+
     while True:
         try:
-            raw = input(f"Bet (enter=${default_bet}) >>> ").strip()
+            raw = input(f"  Bet (enter=${default_bet}) >>> ").strip()
             if raw.lower() in ('q', 'quit'):
                 return None
             if raw == '':
@@ -262,7 +271,7 @@ class BlackjackGame:
                 self.deck.reshuffle()
 
             # Collect bets (last round's hands stay visible).
-            bet = get_player_bet(human, self.minbid, default_bet=last_bet)
+            bet = get_player_bet(human, self.minbid, default_bet=last_bet, round_num=round_num)
             if bet is None:
                 break
             last_bet = bet
@@ -319,7 +328,7 @@ class BlackjackGame:
 
                 print_results_table(self.player_list, self.dealer)
                 print_player_stats(human)
-                player_next = input("\nPress [return] to play again. Type [q] to quit. >>> ")
+                player_next = prompt_play_again()
                 if player_next.strip().lower() == 'q':
                     break
                 continue
@@ -357,11 +366,15 @@ class BlackjackGame:
                         )
                         print(f"  Hint: Basic strategy says {hint}")
 
+                    dealer_upcard = self.dealer.hands[0].cards[1]
+                    upcard_rank = dealer_upcard.rank if dealer_upcard.rank <= 10 else 10
+                    upcard_str = f"{dealer_upcard} ({upcard_rank})"
                     action = get_player_action(
                         can_split=can_split,
                         can_double=can_double,
                         can_surrender=can_surrender,
                         score=hand.score(),
+                        dealer_upcard_str=upcard_str,
                     )
                     is_first_action_on_hand = False
                     first_action = False
@@ -410,7 +423,7 @@ class BlackjackGame:
                         human.score = human.hands[0].score()
                         print_table(self.player_list, active_player_index=0, round_num=round_num)
                         if hand.is_bust():
-                            print("Bust!")
+                            print_bust_message()
 
                 if quit_game:
                     break
@@ -458,7 +471,7 @@ class BlackjackGame:
             print_results_table(self.player_list, self.dealer)
             print_player_stats(human)
 
-            player_next_game = input("\nPress [return] to play again. Type [q] to quit. >>> ")
+            player_next_game = prompt_play_again()
             if player_next_game.strip().lower() == 'q':
                 if self.show_history and self.hand_history:
                     self._print_history()
@@ -505,17 +518,20 @@ def startgame(
 
     print_game_header()
 
+    from .utils import HEADER_WIDTH
     print_statement_with_deco(
-        f"You've chosen {nplayers} computer opponents",
+        f"  You've chosen {nplayers} computer opponents",
         before=True,
         after=True,
-        symbol="-",
+        n_symbols=HEADER_WIDTH,
+        symbol="\u2500",
     )
 
     print_statement_with_deco(
-        statement=f"Playing the game with {ndecks} deck{decks_plural}.",
+        statement=f"  Playing the game with {ndecks} deck{decks_plural}.",
         after=True,
-        symbol="-",
+        n_symbols=HEADER_WIDTH,
+        symbol="\u2500",
     )
 
     _ = BlackjackGame(
