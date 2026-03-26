@@ -452,7 +452,60 @@ def print_game_over(player, round_num):
     print(border)
 
 
+def read_key():
+    """Read one keypress from stdin without requiring Enter.
+
+    Returns a string: 'up', 'down', 'left', 'right', 'enter', 'q',
+    or the raw character for anything else. Raises KeyboardInterrupt on Ctrl-C.
+
+    Falls back to line-based input when stdin is not a TTY (pipes, simulation).
+    """
+    import sys
+    if not sys.stdin.isatty():
+        line = input().strip().lower()
+        if line in ('', 'enter'):
+            return 'enter'
+        return line[0] if line else 'enter'
+
+    import tty
+    import termios
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.buffer.read(1)
+        if ch == b'\x03':
+            raise KeyboardInterrupt
+        if ch == b'\r' or ch == b'\n':
+            return 'enter'
+        if ch == b'\x1b':
+            ch2 = sys.stdin.buffer.read(1)
+            if ch2 == b'[':
+                ch3 = sys.stdin.buffer.read(1)
+                return {b'A': 'up', b'B': 'down',
+                        b'C': 'right', b'D': 'left'}.get(ch3, 'unknown')
+            return 'escape'
+        return ch.decode('utf-8', errors='replace')
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 def prompt_play_again():
-    """Print a styled play-again separator and return the user's input."""
-    print("\n" + "\u2500" * MENU_WIDTH)
-    return input(f"  {CYAN}[return]{RESET} Play again   {CYAN}[q]{RESET} Quit  >>> ")
+    """Arrow-key play-again prompt. Returns '' to play again or 'q' to quit."""
+    options = ["Play again", "Quit"]
+    sel = 0
+    while True:
+        print("\n" + "\u2500" * MENU_WIDTH)
+        for i, opt in enumerate(options):
+            if i == sel:
+                print(f"  {CYAN}\u25b6 {opt}{RESET}")
+            else:
+                print(f"    {opt}")
+        print("\u2191\u2193 navigate   Enter select")
+        key = read_key()
+        if key in ('up', 'down'):
+            sel = (sel + 1) % len(options)
+        elif key == 'enter':
+            return '' if sel == 0 else 'q'
+        elif key == 'q':
+            return 'q'

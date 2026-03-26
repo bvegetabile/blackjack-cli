@@ -686,9 +686,10 @@ def _resolve_player(db, player_name_arg):
 
     If player_name_arg is given, skip confirmation and use it directly.
     Otherwise default to OS username but let the user confirm or switch.
+    Arrow-key navigation is used for the confirmation and switch menus.
     """
     import getpass
-    from .utils import CYAN, RESET
+    from .utils import CYAN, RESET, HEADER_WIDTH, read_key
 
     if player_name_arg:
         username = player_name_arg
@@ -696,65 +697,75 @@ def _resolve_player(db, player_name_arg):
         return username, user_id
 
     candidate = getpass.getuser()
-    print(f"\n  Playing as: {CYAN}{candidate}{RESET}")
-    confirm = input("  [Y] That's me   [N] Switch player >>> ").strip().lower()
 
-    if confirm not in ('n', 'no'):
-        user_id = db.get_or_create_user(candidate)
-        return candidate, user_id
+    # Confirmation screen: "Play as X" / "Switch player"
+    confirm_options = [f"Play as {candidate}", "Switch player"]
+    sel = 0
+    while True:
+        clear_terminal()
+        print_game_header()
+        print()
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        for i, opt in enumerate(confirm_options):
+            if i == sel:
+                print(f"  {CYAN}\u25b6 {opt}{RESET}")
+            else:
+                print(f"    {opt}")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print("  \u2191\u2193 navigate   Enter select")
+        key = read_key()
+        if key in ('up', 'down'):
+            sel = (sel + 1) % len(confirm_options)
+        elif key == 'enter':
+            if sel == 0:
+                user_id = db.get_or_create_user(candidate)
+                return candidate, user_id
+            break  # switch player
+        elif key == 'q':
+            raise KeyboardInterrupt
 
-    # Switch player menu.
-    users = db.list_users()
-    if users:
-        print("\n  Known players:")
-        for i, u in enumerate(users, 1):
-            print(f"    [{i}] {u['username']}")
-    print("    [N] New player name")
-    choice = input("\n  >>> ").strip()
-
-    try:
-        idx = int(choice) - 1
-        username = users[idx]["username"]
-    except (ValueError, IndexError):
-        if choice.lower() == 'n' or choice == '':
-            username = input("  Enter new player name >>> ").strip() or candidate
-        else:
-            username = choice or candidate
-
-    user_id = db.get_or_create_user(username)
-    return username, user_id
+    # Switch player menu: known users + "New player..."
+    known = db.list_users()
+    switch_options = [u["username"] for u in known] + ["New player..."]
+    sel = 0
+    while True:
+        clear_terminal()
+        print_game_header()
+        print()
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print("  SELECT PLAYER")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        for i, opt in enumerate(switch_options):
+            if i == sel:
+                print(f"  {CYAN}\u25b6 {opt}{RESET}")
+            else:
+                print(f"    {opt}")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print("  \u2191\u2193 navigate   Enter select")
+        key = read_key()
+        if key == 'up':
+            sel = (sel - 1) % len(switch_options)
+        elif key in ('down', '\t'):
+            sel = (sel + 1) % len(switch_options)
+        elif key == 'enter':
+            if sel == len(switch_options) - 1:
+                # "New player..." — fall back to line input
+                clear_terminal()
+                print_game_header()
+                print()
+                username = input("  New player name >>> ").strip() or candidate
+            else:
+                username = switch_options[sel]
+            user_id = db.get_or_create_user(username)
+            return username, user_id
+        elif key == 'q':
+            raise KeyboardInterrupt
 
 
 def _read_key():
-    """Read one keypress from stdin without requiring Enter.
-
-    Returns a string: 'up', 'down', 'left', 'right', 'enter', 'q',
-    or the raw character for anything else. Raises KeyboardInterrupt
-    on Ctrl-C.
-    """
-    import sys
-    import tty
-    import termios
-
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = sys.stdin.buffer.read(1)
-        if ch == b'\x03':
-            raise KeyboardInterrupt
-        if ch == b'\r' or ch == b'\n':
-            return 'enter'
-        if ch == b'\x1b':
-            ch2 = sys.stdin.buffer.read(1)
-            if ch2 == b'[':
-                ch3 = sys.stdin.buffer.read(1)
-                return {b'A': 'up', b'B': 'down',
-                        b'C': 'right', b'D': 'left'}.get(ch3, 'unknown')
-            return 'escape'
-        return ch.decode('utf-8', errors='replace')
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    """Alias for utils.read_key — used internally by startgame menus."""
+    from .utils import read_key
+    return read_key()
 
 
 def _show_session_menu(db, user_id, username):
