@@ -53,6 +53,9 @@ class Player:
         elif outcome == "SURRENDER":
             self.stats["surrenders"] += 1
             self.stats["streak"] = min(-1, self.stats["streak"] - 1)
+        elif outcome == "EVEN MONEY":
+            self.stats["wins"] += 1
+            self.stats["streak"] = max(1, self.stats["streak"] + 1)
         elif outcome == "PUSH":
             self.stats["pushes"] += 1
             self.stats["streak"] = 0

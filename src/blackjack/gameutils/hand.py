@@ -14,6 +14,7 @@ class Hand:
         self.is_doubled = False
         self._is_surrendered = False
         self.is_split_ace = False
+        self.is_even_money = False
 
     def add_card(self, card):
         self.cards.append(card)
