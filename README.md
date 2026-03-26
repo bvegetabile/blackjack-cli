@@ -44,6 +44,9 @@ blackjack-app --hints
 
 # Show hand history log when you quit or go broke
 blackjack-app --history
+
+# Control the speed of the dealer hole-card reveal animation (seconds per row; 0 = instant)
+blackjack-app --animation-delay 0.2
 ```
 
 ### Betting
