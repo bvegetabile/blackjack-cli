@@ -272,6 +272,9 @@ class BlackjackGame:
                     round_num = 0
                     last_bet = None
                     continue
+                # True game over — session permanently ended.
+                if self.db and self.session_id:
+                    self.db.complete_session(self.session_id)
                 break
 
             # Eliminate broke computer players or give them a chance to buy back in.
@@ -308,9 +311,7 @@ class BlackjackGame:
             # Collect bets (last round's hands stay visible).
             bet = get_player_bet(human, self.minbid, default_bet=last_bet, round_num=round_num)
             if bet is None:
-                if self.db and self.session_id:
-                    self.db.complete_session(self.session_id)
-                break
+                break  # Session stays active for resume.
             last_bet = bet
             human.hands[0].bet = bet
 
@@ -434,9 +435,7 @@ class BlackjackGame:
                 print_player_stats(human)
                 player_next = prompt_play_again()
                 if player_next.strip().lower() == 'q':
-                    if self.db and self.session_id:
-                        self.db.complete_session(self.session_id)
-                    break
+                    break  # Session stays active for resume.
                 continue
 
             # Lose insurance bets if dealer doesn't have blackjack.
@@ -574,9 +573,7 @@ class BlackjackGame:
                 hand_idx += 1
 
             if quit_game:
-                if self.db and self.session_id:
-                    self.db.complete_session(self.session_id)
-                break
+                break  # Session stays active for resume.
 
             # Computer player actions (hit on <=16, stand on >=17).
             for seat, player in enumerate(self.player_list[1:-1], start=1):
@@ -651,11 +648,9 @@ class BlackjackGame:
 
             player_next_game = prompt_play_again()
             if player_next_game.strip().lower() == 'q':
-                if self.db and self.session_id:
-                    self.db.complete_session(self.session_id)
                 if self.show_history and self.hand_history:
                     self._print_history()
-                break
+                break  # Session stays active for resume.
 
 
     def _checkpoint_round(self, round_id, round_num, last_bet, reshuffled):
