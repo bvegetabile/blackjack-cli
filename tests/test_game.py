@@ -232,16 +232,20 @@ def test_basic_strategy_hint():
 
     # Hard 16 vs dealer 10 -> HIT
     h = Hand(cards=[Card("H", 10), Card("S", 6)], bet=25)
-    assert get_basic_strategy_hint(h, 10, False, True) == "HIT"
+    action, _ = get_basic_strategy_hint(h, 10, False, True)
+    assert action == "HIT"
 
     # Hard 11 vs dealer 6 -> DOUBLE
     h = Hand(cards=[Card("H", 5), Card("S", 6)], bet=25)
-    assert get_basic_strategy_hint(h, 6, False, True) == "DOUBLE"
+    action, _ = get_basic_strategy_hint(h, 6, False, True)
+    assert action == "DOUBLE"
 
     # Pair of 8s -> SPLIT
     h = Hand(cards=[Card("H", 8), Card("S", 8)], bet=25)
-    assert get_basic_strategy_hint(h, 10, True, True) == "SPLIT"
+    action, _ = get_basic_strategy_hint(h, 10, True, True)
+    assert action == "SPLIT"
 
     # Hard 20 -> STAND
     h = Hand(cards=[Card("H", 10), Card("S", 10)], bet=25)
-    assert get_basic_strategy_hint(h, 6, False, False) == "STAND"
+    action, _ = get_basic_strategy_hint(h, 6, False, False)
+    assert action == "STAND"

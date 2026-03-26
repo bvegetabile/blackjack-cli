@@ -120,9 +120,8 @@ def calculate_payout(hand, dealer_hand):
 
 
 def get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double):
-    """Return the basic strategy recommendation."""
+    """Return the basic strategy recommendation as (action, reason)."""
     score = hand.score()
-    is_soft = any(c.rank == 1 for c in hand.cards) and score <= 21 and (score - 10) != score
     # Check if we actually have a soft hand (an ace counted as 11)
     hard_total = sum(c.rank if c.rank <= 10 else 10 for c in hand.cards)
     ace_count = sum(1 for c in hand.cards if c.rank == 1)
@@ -138,50 +137,56 @@ def get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double):
     if can_split:
         pair_rank = hand.cards[0].rank
         if pair_rank == 1:
-            return "SPLIT"
+            return "SPLIT", "splitting aces gives two chances to hit 21"
         if pair_rank == 8:
-            return "SPLIT"
+            return "SPLIT", "16 is the worst hand; two separate 8s are far better"
         if pair_rank in (2, 3, 7) and dealer <= 7:
-            return "SPLIT"
+            return "SPLIT", "dealer is weak and likely to bust — split to win two bets"
         if pair_rank == 4 and dealer in (5, 6):
-            return "SPLIT"
+            return "SPLIT", "dealer is in their weakest range — split to maximize"
         if pair_rank == 6 and dealer <= 6:
-            return "SPLIT"
+            return "SPLIT", "dealer is likely to bust; split to put more money out"
         if pair_rank == 9 and dealer not in (7, 10, 11):
-            return "SPLIT"
+            return "SPLIT", "dealer is vulnerable; two 9s beat one 18"
 
     # Soft totals
     if is_soft:
         if score >= 19:
-            return "STAND"
+            return "STAND", "soft 19+ wins most hands; the risk of hitting outweighs any gain"
         if score == 18:
             if can_double and dealer in (3, 4, 5, 6):
-                return "DOUBLE"
+                return "DOUBLE", "dealer is weak — get more money in on a strong hand"
             if dealer >= 9:
-                return "HIT"
-            return "STAND"
+                return "HIT", "dealer's strong upcard makes 18 insufficient to win"
+            return "STAND", "18 wins or pushes most of the time here"
         if score == 17 and can_double and dealer in (3, 4, 5, 6):
-            return "DOUBLE"
+            return "DOUBLE", "dealer is weak; with an ace you can only improve"
         if score in (15, 16) and can_double and dealer in (4, 5, 6):
-            return "DOUBLE"
+            return "DOUBLE", "dealer is likely to bust; an ace keeps you from busting on the double"
         if score in (13, 14) and can_double and dealer in (5, 6):
-            return "DOUBLE"
-        return "HIT"
+            return "DOUBLE", "dealer is at peak bust risk; you can't bust with an ace in hand"
+        return "HIT", "you can't bust with an ace counted as 11 — always safe to improve"
 
     # Hard totals
     if score >= 17:
-        return "STAND"
+        return "STAND", "busting is too likely; let the dealer take the risk"
     if score >= 13 and dealer <= 6:
-        return "STAND"
+        return "STAND", "dealer must hit their weak hand and is likely to bust"
     if score == 12 and dealer in (4, 5, 6):
-        return "STAND"
+        return "STAND", "dealer's bust range — don't risk busting yourself"
     if score == 11:
-        return "DOUBLE" if can_double else "HIT"
+        if can_double:
+            return "DOUBLE", "11 is the best doubling hand — any 10-value card gives you 21"
+        return "HIT", "11 is your strongest position; draw aggressively"
     if score == 10 and dealer <= 9:
-        return "DOUBLE" if can_double else "HIT"
+        if can_double:
+            return "DOUBLE", "10 vs a weak dealer is a prime doubling spot"
+        return "HIT", "10 is strong against a weak dealer; draw aggressively"
     if score == 9 and dealer in (3, 4, 5, 6):
-        return "DOUBLE" if can_double else "HIT"
-    return "HIT"
+        if can_double:
+            return "DOUBLE", "dealer is weak — put more money out on your 9"
+        return "HIT", "dealer is weak; draw to improve before they bust"
+    return "HIT", "your total is too low to stand — you must improve"
 
 
 class BlackjackGame:
@@ -361,10 +366,10 @@ class BlackjackGame:
                     # Show basic strategy hint.
                     if self.show_hints:
                         dealer_upcard = self.dealer.hands[0].cards[1]
-                        hint = get_basic_strategy_hint(
+                        hint, reason = get_basic_strategy_hint(
                             hand, dealer_upcard.rank, can_split, can_double
                         )
-                        print(f"  Hint: Basic strategy says {hint}")
+                        print(f"  Hint: {hint} — {reason}")
 
                     dealer_upcard = self.dealer.hands[0].cards[1]
                     upcard_rank = dealer_upcard.rank if dealer_upcard.rank <= 10 else 10
