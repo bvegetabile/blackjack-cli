@@ -4,10 +4,11 @@ from blackjack.gameutils.hand import Hand
 
 
 def _patch_game(monkeypatch, inputs):
-    """Monkeypatch input and clear_terminal for clean test runs."""
+    """Monkeypatch input, clear_terminal, and time.sleep for clean test runs."""
     input_iter = iter(inputs)
     monkeypatch.setattr("builtins.input", lambda _="": next(input_iter))
     monkeypatch.setattr("blackjack.utils.clear_terminal", lambda: None)
+    monkeypatch.setattr("time.sleep", lambda s: None)
 
 
 def test_game_smoke_test(monkeypatch):
@@ -249,3 +250,71 @@ def test_basic_strategy_hint():
     h = Hand(cards=[Card("H", 10), Card("S", 10)], bet=25)
     action, _ = get_basic_strategy_hint(h, 6, False, False)
     assert action == "STAND"
+
+
+def test_even_money_taken(monkeypatch):
+    """Verify even money pays 1:1 immediately when player BJ + dealer Ace."""
+    # Player: A + K (natural BJ). Dealer: 7 (hidden) + A (visible) = 18, stands.
+    controlled_cards = [
+        Card("H", 1), Card("S", 7),   # player card 1, dealer card 1 (hidden)
+        Card("D", 13), Card("C", 1),  # player card 2, dealer card 2 (visible Ace)
+    ]
+
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
+    # Inputs: bet $25, take even money ('e'), quit next round.
+    # Even money auto-stands the hand — no play action needed.
+    _patch_game(monkeypatch, ["25", "e", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.needs_reshuffle", lambda self: False)
+
+    game = BlackjackGame(nplayers=1)
+    human = game.player_list[0]
+    # Cash starts at $1000. Even money pays +$25 immediately; calculate_payout returns 0.
+    # Net: $1000 + $25 = $1025.
+    assert human.hands[0].is_even_money is True
+    assert human.cash == 1025
+
+
+def test_even_money_declined(monkeypatch):
+    """Verify declining even money proceeds to normal BJ resolution."""
+    # Player: A + K (natural BJ). Dealer: 7 (hidden) + A (visible) = 18, stands.
+    controlled_cards = [
+        Card("H", 1), Card("S", 7),   # player card 1, dealer card 1 (hidden)
+        Card("D", 13), Card("C", 1),  # player card 2, dealer card 2 (visible Ace)
+    ]
+
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
+    # Inputs: bet, decline even money, decline insurance, stand, quit.
+    _patch_game(monkeypatch, ["25", "n", "n", "s", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.needs_reshuffle", lambda self: False)
+
+    game = BlackjackGame(nplayers=1)
+    human = game.player_list[0]
+    assert human.hands[0].is_even_money is False
+
+
+def test_hint_key_does_not_consume_action(monkeypatch):
+    """Verify [?] hint key shows hint and loops back, requiring a real action after."""
+    _patch_game(monkeypatch, ["25", "?", "s", "q"])  # bet, hint, stand, quit
+    game = BlackjackGame(nplayers=1)
+    # Game completed normally — if hint consumed the action, stand would be skipped.
+    assert game.player_list[0].hands[0].is_standing is True
+
+
+def test_even_money_outcome_calculation(monkeypatch):
+    """Verify even money hands show EVEN MONEY outcome and return 0 from calculate_payout."""
+    from blackjack.utils import determine_outcome
+
+    hand = Hand(cards=[Card("H", 1), Card("S", 13)], bet=100)
+    hand.is_even_money = True
+    dealer_hand = Hand(cards=[Card("D", 10), Card("C", 7)])
+
+    assert determine_outcome(hand, dealer_hand) == "EVEN MONEY"
+    assert calculate_payout(hand, dealer_hand) == 0

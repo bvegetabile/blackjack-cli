@@ -13,6 +13,8 @@ from .utils import print_player_stats
 from .utils import print_game_over
 from .utils import print_bust_message
 from .utils import prompt_play_again
+from .utils import print_blackjack_banner
+from .utils import animate_dealer_reveal
 from .gameutils.deckofcards import DeckOfCards
 from .gameutils.hand import Hand
 from .gameutils.player import Player
@@ -26,6 +28,7 @@ ACTION_MAP = {
     'p': 'split', 'split': 'split',
     'q': 'quit', 'quit': 'quit',
     'r': 'surrender', 'surrender': 'surrender',
+    '?': 'hint', 'hint': 'hint',
 }
 
 
@@ -56,7 +59,7 @@ def get_player_action(can_split=False, can_double=False, can_surrender=False, sc
             print("Surrender is not available.")
             continue
 
-        return action
+        return action  # includes 'hint' — caller handles it by looping back
 
 
 def get_player_bet(player, minbid, default_bet=None, round_num=None):
@@ -93,6 +96,8 @@ def get_player_bet(player, minbid, default_bet=None, round_num=None):
 
 def calculate_payout(hand, dealer_hand):
     """Calculate the payout for a hand against the dealer. Returns the net cash change."""
+    if hand.is_even_money:
+        return 0  # Already paid 1:1 at offer time.
     if hand.is_surrendered:
         return -hand.bet / 2
 
@@ -191,12 +196,13 @@ def get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double):
 
 class BlackjackGame:
     def __init__(self, nplayers=1, ndecks=1, minbid=25, init_cash=1000, init_shuffled=True,
-                 show_hints=False, show_history=False):
+                 show_hints=False, show_history=False, animation_delay=0.4):
         self.nplayers = nplayers
         self.minbid = minbid
         self.init_cash = init_cash
         self.show_hints = show_hints
         self.show_history = show_history
+        self.animation_delay = animation_delay
         self.hand_history = []
 
         # Create players once — they persist across rounds.
@@ -295,18 +301,39 @@ class BlackjackGame:
                     player.add_card_to_hand(new_card)
 
             # Show initial table.
-            print_table(self.player_list, active_player_index=0, round_num=round_num)
+            print_table(self.player_list, active_player_index=0, round_num=round_num, stats_player=human)
 
-            # Insurance check: if dealer's visible card (index 1) is an ace.
+            # Announce natural blackjacks.
+            for player in self.player_list[:-1]:
+                if player.hands[0].is_natural_blackjack():
+                    name = f"Player {player.player_id}" if player.player_type == "normal" else f"Computer {player.player_id}"
+                    print_blackjack_banner(name)
+
+            # Insurance / even money check: if dealer's visible card (index 1) is an ace.
             insurance_bets = {}
             dealer_visible = self.dealer.hands[0].cards[1]
             if dealer_visible.rank == 1:
-                # Human insurance.
-                ins_cost = human.hands[0].bet // 2
-                if ins_cost > 0 and ins_cost <= human.cash:
-                    ins_input = input(f"Insurance? Costs ${ins_cost} (y/n) >>> ").strip().lower()
-                    if ins_input in ('y', 'yes'):
-                        insurance_bets[human.player_id] = ins_cost
+                # Even money: offer to human player if they have a natural blackjack.
+                human_hand = human.hands[0]
+                even_money_taken = False
+                if human_hand.is_natural_blackjack():
+                    em_input = input(
+                        f"  Dealer shows Ace — you have Blackjack!\n"
+                        f"  [E] Even Money (take +${human_hand.bet} guaranteed now)  [N] Decline >>> "
+                    ).strip().lower()
+                    if em_input in ('e', 'even', 'even money'):
+                        human.update_cash(human_hand.bet)
+                        human_hand.is_even_money = True
+                        human_hand.is_standing = True  # Hand resolved immediately.
+                        even_money_taken = True
+
+                if not even_money_taken:
+                    # Regular insurance offer for human.
+                    ins_cost = human_hand.bet // 2
+                    if ins_cost > 0 and ins_cost <= human.cash:
+                        ins_input = input(f"Insurance? Costs ${ins_cost} (y/n) >>> ").strip().lower()
+                        if ins_input in ('y', 'yes'):
+                            insurance_bets[human.player_id] = ins_cost
 
                 # Computer insurance (random).
                 for player in self.player_list[1:-1]:
@@ -381,6 +408,15 @@ class BlackjackGame:
                         score=hand.score(),
                         dealer_upcard_str=upcard_str,
                     )
+
+                    # On-demand hint — show strategy and loop back without consuming the action.
+                    if action == 'hint':
+                        hint, reason = get_basic_strategy_hint(
+                            hand, dealer_upcard.rank, can_split, can_double
+                        )
+                        print(f"\n  Strategy: {hint} — {reason}\n")
+                        continue
+
                     is_first_action_on_hand = False
                     first_action = False
 
@@ -391,7 +427,7 @@ class BlackjackGame:
                     if action == 'surrender':
                         hand.is_surrendered = True
                         hand.is_standing = True
-                        print_table(self.player_list, active_player_index=0, round_num=round_num)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num, stats_player=human)
 
                     elif action == 'stand':
                         hand.is_standing = True
@@ -403,7 +439,7 @@ class BlackjackGame:
                         hand.is_doubled = True
                         hand.is_standing = True
                         human.score = human.hands[0].score()
-                        print_table(self.player_list, active_player_index=0, round_num=round_num)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num, stats_player=human)
 
                     elif action == 'split':
                         human.update_cash(-hand.bet)  # Deduct bet for new hand.
@@ -420,13 +456,13 @@ class BlackjackGame:
                             hand.is_standing = True
                             new_hand.is_standing = True
                         human.score = human.hands[0].score()
-                        print_table(self.player_list, active_player_index=0, round_num=round_num)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num, stats_player=human)
 
                     else:
                         # Hit.
                         hand.add_card(self.deck.get_card())
                         human.score = human.hands[0].score()
-                        print_table(self.player_list, active_player_index=0, round_num=round_num)
+                        print_table(self.player_list, active_player_index=0, round_num=round_num, stats_player=human)
                         if hand.is_bust():
                             print_bust_message()
 
@@ -448,8 +484,8 @@ class BlackjackGame:
                 new_card = self.deck.get_card()
                 self.dealer.add_card_to_hand(new_card)
 
-            # Show final table with dealer revealed.
-            print_table(self.player_list, dealer_reveal=True, round_num=round_num)
+            # Animate dealer hole card reveal.
+            animate_dealer_reveal(self.player_list, round_num, self.animation_delay)
 
             # Calculate payouts and record history.
             for player in self.player_list[:-1]:
@@ -511,6 +547,7 @@ def startgame(
     init_cash: Annotated[int, typer.Option(help="Players initial wallet size.")] = 1000,
     hints: Annotated[bool, typer.Option(help="Show basic strategy hints")] = False,
     history: Annotated[bool, typer.Option(help="Show hand history at game over")] = False,
+    animation_delay: Annotated[float, typer.Option(help="Seconds per row in dealer reveal animation (0 = instant)")] = 0.4,
 ):
     # Clean inputs.
     if ndecks > 1:
@@ -546,4 +583,5 @@ def startgame(
         init_cash=init_cash,
         show_hints=hints,
         show_history=history,
+        animation_delay=animation_delay,
     )

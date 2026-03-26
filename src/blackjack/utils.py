@@ -56,7 +56,7 @@ def _pad_to_visible(s, width):
     return s + " " * max(0, diff)
 
 
-def render_player_box(player, hide_first_card=False, is_active=False, box_width=None):
+def render_player_box(player, hide_first_card=False, is_active=False, box_width=None, first_card_override=None):
     """Render a player's hand inside a box, returning a list of strings."""
     # Build label with cash trend.
     if player.player_type == "dealer":
@@ -80,7 +80,11 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     hand_blocks = []
     for idx, hand in enumerate(player.hands):
         hide = hide_first_card if idx == 0 else False
-        card_str = render_hand(hand.cards, hide_first=hide)
+        card_str = render_hand(
+            hand.cards,
+            hide_first=hide,
+            first_card_override=first_card_override if idx == 0 else None,
+        )
         card_lines = card_str.split("\n") if card_str else []
 
         if not hide_first_card:
@@ -143,7 +147,7 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     return lines
 
 
-def print_table(player_list, active_player_index=None, dealer_reveal=False, round_num=None):
+def print_table(player_list, active_player_index=None, dealer_reveal=False, round_num=None, stats_player=None, dealer_hole_card_override=None):
     """Clear the screen and redraw the full table state with players side-by-side."""
     clear_terminal()
     print_game_header(round_num=round_num)
@@ -161,7 +165,8 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False, roun
     natural_boxes = []
     natural_widths = []
     for player, hide, is_active in player_info:
-        box = render_player_box(player, hide_first_card=hide, is_active=is_active)
+        override = dealer_hole_card_override if player.player_type == "dealer" else None
+        box = render_player_box(player, hide_first_card=hide, is_active=is_active, first_card_override=override)
         natural_boxes.append(box)
         natural_widths.append(_visible_len(box[0]))
 
@@ -207,6 +212,10 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False, roun
             print(gap.join(parts))
         print()
 
+    # Persistent session stats footer for the active human player.
+    if stats_player is not None:
+        _print_stats_footer(stats_player)
+
 
 MENU_WIDTH = 60
 
@@ -222,24 +231,92 @@ def print_action_menu(can_split=False, can_double=False, can_surrender=False, de
     if dealer_upcard_str:
         print(f"  Dealer shows: {dealer_upcard_str}")
     if player_score is not None:
-        print(f"  Player shows: {player_score}")
-    line1 = f" {_key('H')} Hit    {_key('S')} Stand    {_key('Q')} Quit"
-    print(line1)
-    extras = []
+        print(f"  Your score:   {player_score}")
+
+    # Build ordered list of (key, description) pairs.
+    items = [("H", "Hit"), ("S", "Stand")]
     if can_double:
-        extras.append(f"{_key('D')} Double Down")
+        items.append(("D", "Double (\u00d72 bet, 1 card)"))
     if can_split:
-        extras.append(f"{_key('P')} Split")
+        items.append(("P", "Split pairs"))
     if can_surrender:
-        extras.append(f"{_key('R')} Surrender")
-    if extras:
-        print(" " + "   ".join(extras))
+        items.append(("R", "Surrender (\u00bd bet)"))
+    items.append(("?", "Hint"))
+    items.append(("Q", "Quit"))
+
+    # Print two items per row using visible-length-aware padding.
+    col_width = 32
+    for i in range(0, len(items), 2):
+        k1, label1 = items[i]
+        left = f"  {_key(k1)} {label1}"
+        if i + 1 < len(items):
+            k2, label2 = items[i + 1]
+            right = f"{_key(k2)} {label2}"
+            print(_pad_to_visible(left, col_width) + right)
+        else:
+            print(left)
     print("\u2500" * MENU_WIDTH)
+
+
+def print_blackjack_banner(player_name):
+    """Print a full-width celebratory banner for a natural blackjack."""
+    inner = f"\u2605  BLACKJACK!  {player_name}  \u2605"
+    content_width = HEADER_WIDTH - 2
+    top = "\u2554" + "\u2550" * content_width + "\u2557"
+    mid = "\u2551" + inner.center(content_width) + "\u2551"
+    bot = "\u255a" + "\u2550" * content_width + "\u255d"
+    print(f"\n{GREEN}{top}\n{mid}\n{bot}{RESET}\n")
+
+
+def animate_dealer_reveal(player_list, round_num, animation_delay=0.4):
+    """Animate the dealer's hole card peeling back row by row.
+
+    animation_delay controls seconds per row reveal. Set to 0 to skip
+    animation entirely (useful for simulations or fast play).
+    """
+    import time
+    from .gameutils.card_display import partial_reveal_lines
+
+    dealer = player_list[-1]
+    hole_card = dealer.hands[0].cards[0]
+
+    time.sleep(animation_delay * 1.25)  # Pause on face-down state before animation starts
+
+    for n in range(1, 3):  # n=1: top row revealed; n=2: top two rows revealed
+        override = partial_reveal_lines(hole_card, n)
+        print_table(player_list, dealer_reveal=False, round_num=round_num,
+                    dealer_hole_card_override=override)
+        time.sleep(animation_delay)
+
+    # Final frame: full reveal with score shown
+    print_table(player_list, dealer_reveal=True, round_num=round_num)
+
+
+def _print_stats_footer(player):
+    """Print a persistent session stats line below the table."""
+    s = player.stats
+    streak = s["streak"]
+    if streak > 0:
+        streak_str = f"{GREEN}W{streak}{RESET}"
+    elif streak < 0:
+        streak_str = f"{RED}L{abs(streak)}{RESET}"
+    else:
+        streak_str = "-"
+    label = " Your Session "
+    side = (HEADER_WIDTH - len(label)) // 2
+    print("\u2500" * side + label + "\u2500" * (HEADER_WIDTH - side - len(label)))
+    w  = f"{GREEN}{s['wins']}{RESET}"
+    l  = f"{RED}{s['losses']}{RESET}"
+    p  = f"{YELLOW}{s['pushes']}{RESET}"
+    bj = f"{GREEN}{s['blackjacks']}{RESET}"
+    print(f"  W:{w}  L:{l}  P:{p}  BJ:{bj}  Streak:{streak_str}  Cash:${player.cash}")
+    print("\u2500" * HEADER_WIDTH)
 
 
 OUTCOME_COLORS = {
     "WIN": GREEN,
     "BLACKJACK": GREEN,
+    "EVEN MONEY": GREEN,
     "BUST": RED,
     "LOSE": RED,
     "PUSH": YELLOW,
@@ -249,6 +326,8 @@ OUTCOME_COLORS = {
 
 def determine_outcome(hand, dealer_hand):
     """Determine the outcome string for a hand vs dealer."""
+    if hand.is_even_money:
+        return "EVEN MONEY"
     if hand.is_surrendered:
         return "SURRENDER"
     if hand.score() > 21:
@@ -289,19 +368,24 @@ def print_results_table(player_list, dealer=None):
             color = OUTCOME_COLORS.get(outcome, "")
             colored_outcome = f"{color}{outcome}{RESET}"
 
-            # Blackjack celebration.
+            # Special outcome displays.
             if outcome == "BLACKJACK":
                 colored_outcome = f"{GREEN}*** BLACKJACK! ***{RESET}"
+            elif outcome == "EVEN MONEY":
+                colored_outcome = f"{GREEN}Even Money (guaranteed){RESET}"
 
-            # Show payout.
-            payout = calculate_payout(hand, dealer.hands[0])
-            payout_int = int(payout)
-            if payout_int > 0:
-                payout_str = f"{GREEN}+${payout_int}{RESET}"
-            elif payout_int < 0:
-                payout_str = f"{RED}-${abs(payout_int)}{RESET}"
+            # Show payout — even money was already paid at offer time.
+            if outcome == "EVEN MONEY":
+                payout_str = f"{GREEN}+${hand.bet}{RESET}"
             else:
-                payout_str = f"{YELLOW}$0{RESET}"
+                payout = calculate_payout(hand, dealer.hands[0])
+                payout_int = int(payout)
+                if payout_int > 0:
+                    payout_str = f"{GREEN}+${payout_int}{RESET}"
+                elif payout_int < 0:
+                    payout_str = f"{RED}-${abs(payout_int)}{RESET}"
+                else:
+                    payout_str = f"{YELLOW}$0{RESET}"
 
             hand_label = label
             if len(player.hands) > 1:

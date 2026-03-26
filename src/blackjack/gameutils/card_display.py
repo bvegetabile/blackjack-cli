@@ -64,7 +64,21 @@ def face_down_lines():
     ]
 
 
-def render_hand(cards, hide_first=False):
+def partial_reveal_lines(card, n_revealed):
+    """Return 5-line card list transitioning from face-down to face-up.
+
+    n_revealed=0 → identical to face_down_lines()
+    n_revealed=3 → identical to card_to_lines(card)
+    Inner rows (indices 1-3) are replaced top-to-bottom with real content.
+    """
+    result = face_down_lines()
+    real = card_to_lines(card)
+    for i in range(n_revealed):
+        result[1 + i] = real[1 + i]
+    return result
+
+
+def render_hand(cards, hide_first=False, first_card_override=None):
     """Render a list of cards side-by-side as a multi-line string."""
     if not cards:
         return ""
@@ -72,7 +86,7 @@ def render_hand(cards, hide_first=False):
     all_lines = []
     for i, card in enumerate(cards):
         if i == 0 and hide_first:
-            all_lines.append(face_down_lines())
+            all_lines.append(first_card_override if first_card_override is not None else face_down_lines())
         else:
             all_lines.append(card_to_lines(card))
 
