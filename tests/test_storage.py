@@ -87,8 +87,11 @@ def test_anonymous_session(tmp_db):
 def test_get_active_sessions_scoped_to_user(tmp_db):
     uid_alice = tmp_db.get_or_create_user("alice")
     uid_bob = tmp_db.get_or_create_user("bob")
-    tmp_db.create_session(uid_alice, {"nplayers": 1, "ndecks": 1, "minbid": 25, "init_cash": 1000})
-    tmp_db.create_session(uid_bob, {"nplayers": 1, "ndecks": 1, "minbid": 25, "init_cash": 1000})
+    sid_alice = tmp_db.create_session(uid_alice, {"nplayers": 1, "ndecks": 1, "minbid": 25, "init_cash": 1000})
+    sid_bob   = tmp_db.create_session(uid_bob,   {"nplayers": 1, "ndecks": 1, "minbid": 25, "init_cash": 1000})
+    # Sessions with round_num=0 are filtered out; advance each to round 1.
+    tmp_db.update_session_state(sid_alice, round_num=1, last_bet=25, shoe_state='{}', player_states='[{"cash":975}]')
+    tmp_db.update_session_state(sid_bob,   round_num=1, last_bet=25, shoe_state='{}', player_states='[{"cash":975}]')
     alice_sessions = tmp_db.get_active_sessions(uid_alice)
     assert len(alice_sessions) == 1
 

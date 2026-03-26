@@ -164,10 +164,12 @@ class GameDatabase:
         self._conn.commit()
 
     def get_active_sessions(self, user_id: Optional[str]) -> list:
-        """Return active sessions for the given user (None = no match if user is set)."""
+        """Return active sessions with at least one completed round for the given user."""
         rows = self._conn.execute(
-            """SELECT session_id, started_at, round_num, player_states, ndecks, nplayers, last_bet
-               FROM sessions WHERE user_id IS ? AND status = 'active'
+            """SELECT session_id, started_at, last_played_at, round_num,
+                      player_states, ndecks, nplayers, last_bet, init_cash
+               FROM sessions
+               WHERE user_id IS ? AND status = 'active' AND round_num > 0
                ORDER BY last_played_at DESC""",
             (user_id,),
         ).fetchall()

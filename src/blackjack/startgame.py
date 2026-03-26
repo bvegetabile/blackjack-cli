@@ -774,7 +774,9 @@ def _show_session_menu(db, user_id, username):
     rows = []
     for s in active:
         try:
-            dt = datetime.fromisoformat(s["started_at"]).strftime("%b %d")
+            # Convert UTC timestamp to local time for display.
+            local_dt = datetime.fromisoformat(s["started_at"]).astimezone()
+            dt = local_dt.strftime("%b %d  %-I:%M %p")
         except Exception:
             dt = "?"
         cash_str = f"${s['cash']:,}" if s.get("cash") is not None else "?"
