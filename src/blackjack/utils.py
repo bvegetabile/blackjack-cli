@@ -276,13 +276,13 @@ def animate_dealer_reveal(player_list, round_num):
     dealer = player_list[-1]
     hole_card = dealer.hands[0].cards[0]
 
-    time.sleep(0.3)  # Brief pause on current face-down state
+    time.sleep(0.5)  # Pause on face-down state before animation starts
 
     for n in range(1, 3):  # n=1: top row revealed; n=2: top two rows revealed
         override = partial_reveal_lines(hole_card, n)
         print_table(player_list, dealer_reveal=False, round_num=round_num,
                     dealer_hole_card_override=override)
-        time.sleep(0.25)
+        time.sleep(0.4)
 
     # Final frame: full reveal with score shown
     print_table(player_list, dealer_reveal=True, round_num=round_num)
