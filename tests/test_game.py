@@ -13,14 +13,35 @@ def _patch_game(monkeypatch, inputs):
 
 def test_game_smoke_test(monkeypatch):
     """Verify a game completes when the player stands then quits."""
+    controlled_cards = [
+        Card("H", 10), Card("D", 8),  # player, dealer hole
+        Card("S", 7),  Card("C", 9),  # player, dealer upcard (no Ace)
+    ]
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
     _patch_game(monkeypatch, ["25", "s", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+
     game = BlackjackGame(nplayers=1)
     assert len(game.player_list) == 2  # 1 human + 1 dealer
 
 
 def test_game_with_computer_players(monkeypatch):
     """Verify a game with computer players completes."""
+    controlled_cards = [
+        Card("H", 10), Card("S", 5), Card("D", 8),   # human, cpu, dealer hole
+        Card("C", 7),  Card("H", 3), Card("S", 9),   # human, cpu, dealer upcard (no Ace)
+        Card("D", 10),                                # cpu hits 5+3=8, +10=18
+    ]
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
     _patch_game(monkeypatch, ["25", "s", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+
     game = BlackjackGame(nplayers=2)
     assert len(game.player_list) >= 3  # 1 human + computers + 1 dealer
 
@@ -47,14 +68,37 @@ def test_game_hit_then_stand(monkeypatch):
 
 def test_game_multi_deck(monkeypatch):
     """Verify a game works with multiple decks."""
+    controlled_cards = [
+        Card("H", 10), Card("D", 8),  # player, dealer hole
+        Card("S", 7),  Card("C", 9),  # player, dealer upcard (no Ace)
+    ]
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
     _patch_game(monkeypatch, ["25", "s", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+
     game = BlackjackGame(nplayers=1, ndecks=2)
     assert game.deck is not None
 
 
 def test_game_double_down(monkeypatch):
     """Verify double down deals one card and ends the turn."""
+    controlled_cards = [
+        Card("H", 5), Card("S", 6),   # player card 1, dealer card 1 (hidden)
+        Card("D", 6), Card("C", 7),   # player card 2, dealer card 2
+        Card("H", 10),                # double card
+        Card("D", 3), Card("C", 2),   # dealer extra if needed
+    ]
+
+    def mock_get_card(from_top=True):
+        return controlled_cards.pop(0)
+
     _patch_game(monkeypatch, ["25", "d", "q"])
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.get_card", mock_get_card)
+    monkeypatch.setattr("blackjack.gameutils.deckofcards.DeckOfCards.shuffle", lambda self: None)
+
     game = BlackjackGame(nplayers=1)
     assert len(game.player_list[0].hand) == 3
     assert game.player_list[0].hands[0].is_doubled is True
