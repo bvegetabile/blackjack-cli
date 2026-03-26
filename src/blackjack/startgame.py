@@ -254,27 +254,15 @@ class BlackjackGame:
             round_num += 1
             human = self.player_list[0]
 
-            # Check if human is broke.
+            # Check if human is broke — session ends here.
             if human.cash < self.minbid:
                 print_table(self.player_list, dealer_reveal=True, round_num=round_num)
                 print_game_over(human, round_num - 1)
                 if self.show_history and self.hand_history:
                     self._print_history()
-                restart = input("\nPlay again with fresh cash? (y/n) >>> ").strip().lower()
-                if restart in ('y', 'yes'):
-                    human.cash = self.init_cash
-                    human.prev_cash = self.init_cash
-                    human.stats = {
-                        "wins": 0, "losses": 0, "pushes": 0,
-                        "blackjacks": 0, "busts": 0, "surrenders": 0,
-                        "peak_cash": self.init_cash, "streak": 0,
-                    }
-                    round_num = 0
-                    last_bet = None
-                    continue
-                # True game over — session permanently ended.
                 if self.db and self.session_id:
                     self.db.complete_session(self.session_id)
+                input("\n  [Enter] Return to menu >>> ")
                 break
 
             # Eliminate broke computer players or give them a chance to buy back in.
@@ -737,103 +725,176 @@ def _resolve_player(db, player_name_arg):
     return username, user_id
 
 
-def _show_resume_menu(db, user_id, username):
-    """Display active sessions and return (session_id, resume_data) or (None, None)."""
-    from .utils import CYAN, RESET
+def _show_session_menu(db, user_id, username):
+    """Display the session menu.
+
+    Returns one of:
+      ('resume', session_id, resume_data)
+      ('new',    None,       None)
+      ('quit',   None,       None)
+    """
+    from datetime import datetime
+    from .utils import CYAN, RESET, HEADER_WIDTH
+
     active = db.get_active_sessions(user_id)
-    if not active:
-        return None, None
 
-    print(f"\n  Welcome back, {CYAN}{username}{RESET} — active sessions:")
-    for i, s in enumerate(active, 1):
-        from datetime import datetime
+    clear_terminal()
+    print_game_header()
+    print()
+
+    if active:
+        print(f"  Welcome back, {CYAN}{username}{RESET}\n")
+        print(f"  {'Active sessions':}")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        for i, s in enumerate(active, 1):
+            try:
+                dt = datetime.fromisoformat(s["started_at"]).strftime("%b %d")
+            except Exception:
+                dt = "?"
+            cash_str = f"${s['cash']:,}" if s.get("cash") is not None else "?"
+            ndecks = s.get("ndecks") or 1
+            deck_str = f"{ndecks}d"
+            print(f"  [{i}] {dt}  Round {s['round_num']:>3}  Cash {cash_str:<8}  ({deck_str})")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print(f"  {CYAN}[N]{RESET} New session   {CYAN}[Q]{RESET} Quit")
+        choice = input("\n  >>> ").strip().lower()
+
+        if choice == 'q':
+            return 'quit', None, None
         try:
-            dt = datetime.fromisoformat(s["started_at"]).strftime("%b %d")
-        except Exception:
-            dt = "?"
-        cash_str = f"${s['cash']}" if s.get("cash") is not None else "?"
-        print(f"    [{i}] Started {dt}  |  Round {s['round_num']}  |  Cash {cash_str}")
-    print("    [N] Start new session")
+            idx = int(choice) - 1
+            selected = active[idx]
+            resume_data = db.load_session(selected["session_id"])
+            return 'resume', selected["session_id"], resume_data
+        except (ValueError, IndexError):
+            pass  # fall through to new session
 
-    choice = input("\n  >>> ").strip().lower()
-    try:
-        idx = int(choice) - 1
-        selected = active[idx]
-        resume_data = db.load_session(selected["session_id"])
-        return selected["session_id"], resume_data
-    except (ValueError, IndexError):
-        return None, None
+    return 'new', None, None
+
+
+_DECK_OPTS = [1, 2, 4, 6, 8]
+_CASH_OPTS = [250, 500, 1000, 2000, 5000]
+_BET_OPTS  = [5, 10, 25, 50, 100]
+_OPP_OPTS  = [0, 1, 2, 3]
+
+
+def _get_new_session_config():
+    """Interactive new-session setup screen. Returns a config dict.
+
+    The user presses [1-4] to cycle through each setting, [Enter] to start.
+    """
+    from .utils import CYAN, RESET, HEADER_WIDTH
+
+    cfg = {"ndecks": 6, "init_cash": 1000, "minbid": 25, "nplayers": 1}
+
+    def _cycle(value, opts):
+        idx = opts.index(value) if value in opts else 0
+        return opts[(idx + 1) % len(opts)]
+
+    while True:
+        clear_terminal()
+        print_game_header()
+        print()
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print("  NEW SESSION SETUP")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print(f"  {CYAN}[1]{RESET} Decks in shoe:    {cfg['ndecks']}")
+        print(f"  {CYAN}[2]{RESET} Starting cash:    ${cfg['init_cash']:,}")
+        print(f"  {CYAN}[3]{RESET} Minimum bet:      ${cfg['minbid']}")
+        print(f"  {CYAN}[4]{RESET} CPU opponents:    {cfg['nplayers'] - 1}")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        choice = input(
+            f"  {CYAN}[1-4]{RESET} Cycle setting   {CYAN}[Enter]{RESET} Start  >>> "
+        ).strip()
+
+        if choice == '':
+            return cfg
+        elif choice == '1':
+            cfg['ndecks'] = _cycle(cfg['ndecks'], _DECK_OPTS)
+        elif choice == '2':
+            cfg['init_cash'] = _cycle(cfg['init_cash'], _CASH_OPTS)
+        elif choice == '3':
+            cfg['minbid'] = _cycle(cfg['minbid'], _BET_OPTS)
+        elif choice == '4':
+            cfg['nplayers'] = _cycle(cfg['nplayers'] - 1, _OPP_OPTS) + 1
 
 
 def startgame(
-    nplayers: Annotated[
-        int, typer.Option(help="The number of players (including you)")
-    ] = 1,
-    ndecks: Annotated[int, typer.Option(help="The number of decks")] = 1,
-    minbid: Annotated[int, typer.Option(help="Casino table minimum bid")] = 25,
-    init_cash: Annotated[int, typer.Option(help="Players initial wallet size.")] = 1000,
     hints: Annotated[bool, typer.Option(help="Show basic strategy hints")] = False,
     history: Annotated[bool, typer.Option(help="Show hand history at game over")] = False,
-    animation_delay: Annotated[float, typer.Option(help="Seconds per row in dealer reveal animation (0 = instant)")] = 0.4,
-    anonymous: Annotated[bool, typer.Option("--anonymous", help="Skip session storage — no history or resume")] = False,
-    player_name: Annotated[str, typer.Option(help="Your player name (default: OS username)")] = None,
+    animation_delay: Annotated[float, typer.Option(
+        help="Seconds per row in dealer reveal animation (0 = instant)"
+    )] = 0.4,
+    anonymous: Annotated[bool, typer.Option(
+        "--anonymous", help="Skip session storage — no history or resume"
+    )] = False,
+    player_name: Annotated[str, typer.Option(
+        help="Your player name (default: OS username)"
+    )] = None,
 ):
-    decks_plural = "s" if ndecks > 1 else ""
+    """Play blackjack. Game settings are chosen interactively at session start."""
+    from .utils import HEADER_WIDTH
 
-    # Set up DB and resolve user unless running anonymously.
+    # Resolve identity and open DB once (outside the game loop).
     db = None
-    session_id = None
-    resume_data = None
+    user_id = None
+    username = None
 
     if not anonymous:
         from .storage import GameDatabase, DEFAULT_DB_PATH
         db = GameDatabase(str(DEFAULT_DB_PATH))
         username, user_id = _resolve_player(db, player_name)
-        session_id, resume_data = _show_resume_menu(db, user_id, username)
 
-        if resume_data:
-            # Restore game config from the saved session.
-            nplayers = resume_data.get("nplayers", nplayers)
-            ndecks = resume_data.get("ndecks", ndecks)
-            minbid = resume_data.get("minbid", minbid)
-            init_cash = resume_data.get("init_cash", init_cash)
+    # Main loop — each iteration is one full session.
+    while True:
+        session_id = None
+        resume_data = None
+
+        if db:
+            action, session_id, resume_data = _show_session_menu(db, user_id, username)
+            if action == 'quit':
+                break
+
+            if action == 'resume':
+                cfg = resume_data  # config embedded in session row
+            else:
+                cfg = _get_new_session_config()
+                cfg['animation_delay'] = animation_delay
+                session_id = db.create_session(user_id, cfg)
+                resume_data = None
         else:
-            config = {
-                "nplayers": nplayers, "ndecks": ndecks,
-                "minbid": minbid, "init_cash": init_cash,
-                "animation_delay": animation_delay,
-            }
-            session_id = db.create_session(user_id, config)
+            cfg = _get_new_session_config()
 
-    # Initialize game display.
-    clear_terminal()
-    print_game_header()
+        nplayers   = cfg.get('nplayers', 1)
+        ndecks     = cfg.get('ndecks', 6)
+        minbid     = cfg.get('minbid', 25)
+        init_cash  = cfg.get('init_cash', 1000)
+        decks_plural = "s" if ndecks > 1 else ""
+        n_opp = nplayers - 1
 
-    from .utils import HEADER_WIDTH
-    print_statement_with_deco(
-        f"  You've chosen {nplayers - 1} computer opponent{'s' if nplayers - 1 != 1 else ''}",
-        before=True,
-        after=True,
-        n_symbols=HEADER_WIDTH,
-        symbol="\u2500",
-    )
+        # Show game start summary.
+        clear_terminal()
+        print_game_header()
+        opp_str = f"{n_opp} CPU opponent{'s' if n_opp != 1 else ''}"
+        deck_str = f"{ndecks} deck{decks_plural}"
+        print_statement_with_deco(
+            f"  {opp_str}  |  {deck_str}  |  ${init_cash:,} start  |  ${minbid} min bet",
+            before=True, after=True, n_symbols=HEADER_WIDTH, symbol="\u2500",
+        )
 
-    print_statement_with_deco(
-        statement=f"  Playing the game with {ndecks} deck{decks_plural}.",
-        after=True,
-        n_symbols=HEADER_WIDTH,
-        symbol="\u2500",
-    )
+        BlackjackGame(
+            nplayers=nplayers,
+            ndecks=ndecks,
+            minbid=minbid,
+            init_cash=init_cash,
+            show_hints=hints,
+            show_history=history,
+            animation_delay=animation_delay,
+            db=db,
+            session_id=session_id,
+            resume_data=resume_data,
+        )
 
-    _ = BlackjackGame(
-        nplayers=nplayers,
-        ndecks=ndecks,
-        minbid=minbid,
-        init_cash=init_cash,
-        show_hints=hints,
-        show_history=history,
-        animation_delay=animation_delay,
-        db=db,
-        session_id=session_id,
-        resume_data=resume_data,
-    )
+        # Anonymous mode doesn't loop — one session and done.
+        if not db:
+            break
