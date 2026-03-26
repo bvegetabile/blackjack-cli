@@ -1,3 +1,4 @@
+import json
 import random
 
 import typer
@@ -18,8 +19,6 @@ from .utils import animate_dealer_reveal
 from .gameutils.deckofcards import DeckOfCards
 from .gameutils.hand import Hand
 from .gameutils.player import Player
-
-# pipx install . --force
 
 ACTION_MAP = {
     '': 'hit', 'h': 'hit', 'hit': 'hit',
@@ -196,14 +195,18 @@ def get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double):
 
 class BlackjackGame:
     def __init__(self, nplayers=1, ndecks=1, minbid=25, init_cash=1000, init_shuffled=True,
-                 show_hints=False, show_history=False, animation_delay=0.4):
+                 show_hints=False, show_history=False, animation_delay=0.4,
+                 db=None, session_id=None, resume_data=None):
         self.nplayers = nplayers
+        self.ndecks = ndecks
         self.minbid = minbid
         self.init_cash = init_cash
         self.show_hints = show_hints
         self.show_history = show_history
         self.animation_delay = animation_delay
         self.hand_history = []
+        self.db = db
+        self.session_id = session_id
 
         # Create players once — they persist across rounds.
         self.player_list = []
@@ -232,9 +235,21 @@ class BlackjackGame:
         if init_shuffled:
             self.deck.shuffle()
 
-        # Game loop.
+        # Resume from checkpoint if provided.
         last_bet = None
         round_num = 0
+        if resume_data:
+            from .storage import restore_shoe, restore_players
+            round_num = resume_data.get("round_num", 0)
+            last_bet = resume_data.get("last_bet")
+            if resume_data.get("shoe_state"):
+                restore_shoe(self.deck, resume_data["shoe_state"])
+            if resume_data.get("player_states"):
+                restore_players(self.player_list, resume_data["player_states"])
+
+        # Game loop.
+        reshuffled_this_round = False
+        round_id = None
         while True:
             round_num += 1
             human = self.player_list[0]
@@ -277,13 +292,24 @@ class BlackjackGame:
                 player.reset_hands()
 
             # Reshuffle shoe if penetration is high.
+            reshuffled_this_round = False
             if self.deck.needs_reshuffle():
                 print("  Reshuffling the shoe...")
                 self.deck.reshuffle()
+                reshuffled_this_round = True
+
+            # Start round in DB.
+            if self.db and self.session_id:
+                round_id = self.db.start_round(self.session_id, round_num)
+                if reshuffled_this_round:
+                    self.db.log_event(self.session_id, round_id, 'RESHUFFLE',
+                                      cards_remaining=self.deck.cards_remaining())
 
             # Collect bets (last round's hands stay visible).
             bet = get_player_bet(human, self.minbid, default_bet=last_bet, round_num=round_num)
             if bet is None:
+                if self.db and self.session_id:
+                    self.db.complete_session(self.session_id)
                 break
             last_bet = bet
             human.hands[0].bet = bet
@@ -294,11 +320,22 @@ class BlackjackGame:
                 cpu_bet = random.randint(self.minbid, max(self.minbid, max_bet))
                 player.hands[0].bet = cpu_bet
 
-            # Deal cards.
+            # Deal cards and log each deal.
             for _ in range(2):
-                for player in self.player_list:
+                for seat, player in enumerate(self.player_list):
                     new_card = self.deck.get_card()
                     player.add_card_to_hand(new_card)
+                    if self.db and self.session_id and round_id:
+                        self.db.log_event(
+                            self.session_id, round_id, 'DEAL',
+                            player_id=player.player_id,
+                            player_type=player.player_type,
+                            seat_position=seat if player.player_type != 'dealer' else None,
+                            card_suit=new_card.suit,
+                            card_rank=new_card.rank,
+                            ndecks=self.ndecks,
+                            cards_remaining=self.deck.cards_remaining(),
+                        )
 
             # Show initial table.
             print_table(self.player_list, active_player_index=0, round_num=round_num, stats_player=human)
@@ -312,6 +349,7 @@ class BlackjackGame:
             # Insurance / even money check: if dealer's visible card (index 1) is an ace.
             insurance_bets = {}
             dealer_visible = self.dealer.hands[0].cards[1]
+            dealer_upcard = dealer_visible
             if dealer_visible.rank == 1:
                 # Even money: offer to human player if they have a natural blackjack.
                 human_hand = human.hands[0]
@@ -321,7 +359,18 @@ class BlackjackGame:
                         f"  Dealer shows Ace — you have Blackjack!\n"
                         f"  [E] Even Money (take +${human_hand.bet} guaranteed now)  [N] Decline >>> "
                     ).strip().lower()
-                    if em_input in ('e', 'even', 'even money'):
+                    em_action = 'yes' if em_input in ('e', 'even', 'even money') else 'no'
+                    if self.db and self.session_id and round_id:
+                        self.db.log_event(
+                            self.session_id, round_id, 'EVEN_MONEY',
+                            player_id=human.player_id, player_type='normal', seat_position=0,
+                            action=em_action, bet=human_hand.bet, player_cash=human.cash,
+                            dealer_upcard_rank=dealer_upcard.rank,
+                            dealer_upcard_suit=dealer_upcard.suit,
+                            ndecks=self.ndecks,
+                            cards_remaining=self.deck.cards_remaining(),
+                        )
+                    if em_action == 'yes':
                         human.update_cash(human_hand.bet)
                         human_hand.is_even_money = True
                         human_hand.is_standing = True  # Hand resolved immediately.
@@ -332,7 +381,18 @@ class BlackjackGame:
                     ins_cost = human_hand.bet // 2
                     if ins_cost > 0 and ins_cost <= human.cash:
                         ins_input = input(f"Insurance? Costs ${ins_cost} (y/n) >>> ").strip().lower()
-                        if ins_input in ('y', 'yes'):
+                        ins_action = 'yes' if ins_input in ('y', 'yes') else 'no'
+                        if self.db and self.session_id and round_id:
+                            self.db.log_event(
+                                self.session_id, round_id, 'INSURANCE',
+                                player_id=human.player_id, player_type='normal', seat_position=0,
+                                action=ins_action, bet=ins_cost, player_cash=human.cash,
+                                dealer_upcard_rank=dealer_upcard.rank,
+                                dealer_upcard_suit=dealer_upcard.suit,
+                                ndecks=self.ndecks,
+                                cards_remaining=self.deck.cards_remaining(),
+                            )
+                        if ins_action == 'yes':
                             insurance_bets[human.player_id] = ins_cost
 
                 # Computer insurance (random).
@@ -352,16 +412,30 @@ class BlackjackGame:
                     if ins_bet > 0:
                         player.update_cash(ins_bet * 2)  # Insurance pays 2:1.
 
-                # Settle hands.
-                for player in self.player_list[:-1]:
-                    for hand in player.hands:
+                # Settle hands and log payouts.
+                for seat, player in enumerate(self.player_list[:-1]):
+                    for hand_idx, hand in enumerate(player.hands):
                         payout = calculate_payout(hand, self.dealer.hands[0])
                         player.update_cash(int(payout))
+                        if self.db and self.session_id and round_id:
+                            from .utils import determine_outcome
+                            outcome = determine_outcome(hand, self.dealer.hands[0])
+                            self.db.log_event(
+                                self.session_id, round_id, 'PAYOUT',
+                                player_id=player.player_id, player_type=player.player_type,
+                                seat_position=seat, hand_index=hand_idx,
+                                outcome=outcome, payout=int(payout), cash_after=player.cash,
+                                ndecks=self.ndecks,
+                                cards_remaining=self.deck.cards_remaining(),
+                            )
 
+                self._checkpoint_round(round_id, round_num, last_bet, reshuffled_this_round)
                 print_results_table(self.player_list, self.dealer)
                 print_player_stats(human)
                 player_next = prompt_play_again()
                 if player_next.strip().lower() == 'q':
+                    if self.db and self.session_id:
+                        self.db.complete_session(self.session_id)
                     break
                 continue
 
@@ -424,6 +498,35 @@ class BlackjackGame:
                         quit_game = True
                         break
 
+                    # Log the player action before applying it.
+                    if self.db and self.session_id and round_id:
+                        from .storage import burned_counts, snapshot_visible_cards
+                        hard_total = sum(c.rank if c.rank <= 10 else 10 for c in hand.cards)
+                        ace_count = sum(1 for c in hand.cards if c.rank == 1)
+                        is_soft = ace_count > 0 and hard_total + 10 <= 21 and len(hand.cards) == 2
+                        self.db.log_event(
+                            self.session_id, round_id, 'PLAYER_ACTION',
+                            player_id=human.player_id, player_type='normal', seat_position=0,
+                            hand_index=hand_idx,
+                            action=action,
+                            player_cards=json.dumps([{"suit": c.suit, "rank": c.rank} for c in hand.cards]),
+                            player_hand_value=hand.score(),
+                            player_is_soft=int(is_soft),
+                            player_cash=human.cash,
+                            bet=hand.bet,
+                            can_hit=1,
+                            can_stand=1,
+                            can_double=int(can_double),
+                            can_split=int(can_split),
+                            can_surrender=int(can_surrender),
+                            dealer_upcard_rank=dealer_upcard.rank,
+                            dealer_upcard_suit=dealer_upcard.suit,
+                            ndecks=self.ndecks,
+                            visible_cards=json.dumps(snapshot_visible_cards(self.player_list)),
+                            burned_counts=json.dumps(burned_counts(self.deck)),
+                            cards_remaining=self.deck.cards_remaining(),
+                        )
+
                     if action == 'surrender':
                         hand.is_surrendered = True
                         hand.is_standing = True
@@ -471,25 +574,45 @@ class BlackjackGame:
                 hand_idx += 1
 
             if quit_game:
+                if self.db and self.session_id:
+                    self.db.complete_session(self.session_id)
                 break
 
             # Computer player actions (hit on <=16, stand on >=17).
-            for player in self.player_list[1:-1]:
+            for seat, player in enumerate(self.player_list[1:-1], start=1):
                 while player.score_hand() <= 16:
                     new_card = self.deck.get_card()
                     player.add_card_to_hand(new_card)
+                    if self.db and self.session_id and round_id:
+                        self.db.log_event(
+                            self.session_id, round_id, 'PLAYER_ACTION',
+                            player_id=player.player_id, player_type='computer',
+                            seat_position=seat,
+                            action='hit',
+                            player_hand_value=player.score_hand(),
+                            card_suit=new_card.suit, card_rank=new_card.rank,
+                            ndecks=self.ndecks,
+                            cards_remaining=self.deck.cards_remaining(),
+                        )
 
             # Dealer actions (S17: stand on all 17s).
             while self.dealer.score_hand() < 17:
                 new_card = self.deck.get_card()
                 self.dealer.add_card_to_hand(new_card)
+                if self.db and self.session_id and round_id:
+                    self.db.log_event(
+                        self.session_id, round_id, 'DEALER_HIT',
+                        card_suit=new_card.suit, card_rank=new_card.rank,
+                        ndecks=self.ndecks,
+                        cards_remaining=self.deck.cards_remaining(),
+                    )
 
             # Animate dealer hole card reveal.
             animate_dealer_reveal(self.player_list, round_num, self.animation_delay)
 
             # Calculate payouts and record history.
-            for player in self.player_list[:-1]:
-                for hand in player.hands:
+            for seat, player in enumerate(self.player_list[:-1]):
+                for hi, hand in enumerate(player.hands):
                     payout = calculate_payout(hand, self.dealer.hands[0])
                     player.update_cash(int(payout))
 
@@ -508,16 +631,53 @@ class BlackjackGame:
                             "cash": human.cash,
                         })
 
+                    if self.db and self.session_id and round_id:
+                        from .utils import determine_outcome
+                        outcome = determine_outcome(hand, self.dealer.hands[0])
+                        self.db.log_event(
+                            self.session_id, round_id, 'PAYOUT',
+                            player_id=player.player_id, player_type=player.player_type,
+                            seat_position=seat, hand_index=hi,
+                            outcome=outcome, payout=int(payout), cash_after=player.cash,
+                            ndecks=self.ndecks,
+                            cards_remaining=self.deck.cards_remaining(),
+                        )
+
+            self._checkpoint_round(round_id, round_num, last_bet, reshuffled_this_round)
+
             # Print results and stats.
             print_results_table(self.player_list, self.dealer)
             print_player_stats(human)
 
             player_next_game = prompt_play_again()
             if player_next_game.strip().lower() == 'q':
+                if self.db and self.session_id:
+                    self.db.complete_session(self.session_id)
                 if self.show_history and self.hand_history:
                     self._print_history()
                 break
 
+
+    def _checkpoint_round(self, round_id, round_num, last_bet, reshuffled):
+        """Save session checkpoint and complete the round row in the DB."""
+        if not self.db or not self.session_id:
+            return
+        from .storage import serialize_shoe, serialize_players
+        dealer_cards = json.dumps([{"suit": c.suit, "rank": c.rank}
+                                   for c in self.dealer.hands[0].cards])
+        self.db.complete_round(
+            round_id,
+            dealer_cards=dealer_cards,
+            dealer_score=self.dealer.score_hand(),
+            reshuffled=reshuffled,
+        )
+        self.db.update_session_state(
+            self.session_id,
+            round_num=round_num,
+            last_bet=last_bet,
+            shoe_state=serialize_shoe(self.deck),
+            player_states=serialize_players(self.player_list),
+        )
 
     def _print_history(self):
         """Print hand history log."""
@@ -538,6 +698,78 @@ class BlackjackGame:
         print("=" * 70)
 
 
+def _resolve_player(db, player_name_arg):
+    """Verify or select the active player. Returns (username, user_id).
+
+    If player_name_arg is given, skip confirmation and use it directly.
+    Otherwise default to OS username but let the user confirm or switch.
+    """
+    import getpass
+    from .utils import CYAN, RESET
+
+    if player_name_arg:
+        username = player_name_arg
+        user_id = db.get_or_create_user(username)
+        return username, user_id
+
+    candidate = getpass.getuser()
+    print(f"\n  Playing as: {CYAN}{candidate}{RESET}")
+    confirm = input("  [Y] That's me   [N] Switch player >>> ").strip().lower()
+
+    if confirm not in ('n', 'no'):
+        user_id = db.get_or_create_user(candidate)
+        return candidate, user_id
+
+    # Switch player menu.
+    users = db.list_users()
+    if users:
+        print("\n  Known players:")
+        for i, u in enumerate(users, 1):
+            print(f"    [{i}] {u['username']}")
+    print("    [N] New player name")
+    choice = input("\n  >>> ").strip()
+
+    try:
+        idx = int(choice) - 1
+        username = users[idx]["username"]
+    except (ValueError, IndexError):
+        if choice.lower() == 'n' or choice == '':
+            username = input("  Enter new player name >>> ").strip() or candidate
+        else:
+            username = choice or candidate
+
+    user_id = db.get_or_create_user(username)
+    return username, user_id
+
+
+def _show_resume_menu(db, user_id, username):
+    """Display active sessions and return (session_id, resume_data) or (None, None)."""
+    from .utils import CYAN, RESET
+    active = db.get_active_sessions(user_id)
+    if not active:
+        return None, None
+
+    print(f"\n  Welcome back, {CYAN}{username}{RESET} — active sessions:")
+    for i, s in enumerate(active, 1):
+        from datetime import datetime
+        try:
+            dt = datetime.fromisoformat(s["started_at"]).strftime("%b %d")
+        except Exception:
+            dt = "?"
+        cash_str = f"${s['cash']}" if s.get("cash") is not None else "?"
+        print(f"    [{i}] Started {dt}  |  Round {s['round_num']}  |  Cash {cash_str}")
+    print("    [N] Start new session")
+
+    choice = input("\n  >>> ").strip().lower()
+    try:
+        idx = int(choice) - 1
+        selected = active[idx]
+        resume_data = db.load_session(selected["session_id"])
+        return selected["session_id"], resume_data
+    except (ValueError, IndexError):
+        return None, None
+
+
 def startgame(
     nplayers: Annotated[
         int, typer.Option(help="The number of players (including you)")
@@ -548,21 +780,43 @@ def startgame(
     hints: Annotated[bool, typer.Option(help="Show basic strategy hints")] = False,
     history: Annotated[bool, typer.Option(help="Show hand history at game over")] = False,
     animation_delay: Annotated[float, typer.Option(help="Seconds per row in dealer reveal animation (0 = instant)")] = 0.4,
+    anonymous: Annotated[bool, typer.Option("--anonymous", help="Skip session storage — no history or resume")] = False,
+    player_name: Annotated[str, typer.Option(help="Your player name (default: OS username)")] = None,
 ):
-    # Clean inputs.
-    if ndecks > 1:
-        decks_plural = "s"
-    else:
-        decks_plural = ""
+    decks_plural = "s" if ndecks > 1 else ""
 
-    # Initialize game.
+    # Set up DB and resolve user unless running anonymously.
+    db = None
+    session_id = None
+    resume_data = None
+
+    if not anonymous:
+        from .storage import GameDatabase, DEFAULT_DB_PATH
+        db = GameDatabase(str(DEFAULT_DB_PATH))
+        username, user_id = _resolve_player(db, player_name)
+        session_id, resume_data = _show_resume_menu(db, user_id, username)
+
+        if resume_data:
+            # Restore game config from the saved session.
+            nplayers = resume_data.get("nplayers", nplayers)
+            ndecks = resume_data.get("ndecks", ndecks)
+            minbid = resume_data.get("minbid", minbid)
+            init_cash = resume_data.get("init_cash", init_cash)
+        else:
+            config = {
+                "nplayers": nplayers, "ndecks": ndecks,
+                "minbid": minbid, "init_cash": init_cash,
+                "animation_delay": animation_delay,
+            }
+            session_id = db.create_session(user_id, config)
+
+    # Initialize game display.
     clear_terminal()
-
     print_game_header()
 
     from .utils import HEADER_WIDTH
     print_statement_with_deco(
-        f"  You've chosen {nplayers} computer opponents",
+        f"  You've chosen {nplayers - 1} computer opponent{'s' if nplayers - 1 != 1 else ''}",
         before=True,
         after=True,
         n_symbols=HEADER_WIDTH,
@@ -584,4 +838,7 @@ def startgame(
         show_hints=hints,
         show_history=history,
         animation_delay=animation_delay,
+        db=db,
+        session_id=session_id,
+        resume_data=resume_data,
     )
