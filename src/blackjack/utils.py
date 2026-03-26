@@ -56,7 +56,7 @@ def _pad_to_visible(s, width):
     return s + " " * max(0, diff)
 
 
-def render_player_box(player, hide_first_card=False, is_active=False, box_width=None):
+def render_player_box(player, hide_first_card=False, is_active=False, box_width=None, first_card_override=None):
     """Render a player's hand inside a box, returning a list of strings."""
     # Build label with cash trend.
     if player.player_type == "dealer":
@@ -80,7 +80,11 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     hand_blocks = []
     for idx, hand in enumerate(player.hands):
         hide = hide_first_card if idx == 0 else False
-        card_str = render_hand(hand.cards, hide_first=hide)
+        card_str = render_hand(
+            hand.cards,
+            hide_first=hide,
+            first_card_override=first_card_override if idx == 0 else None,
+        )
         card_lines = card_str.split("\n") if card_str else []
 
         if not hide_first_card:
@@ -143,7 +147,7 @@ def render_player_box(player, hide_first_card=False, is_active=False, box_width=
     return lines
 
 
-def print_table(player_list, active_player_index=None, dealer_reveal=False, round_num=None, stats_player=None):
+def print_table(player_list, active_player_index=None, dealer_reveal=False, round_num=None, stats_player=None, dealer_hole_card_override=None):
     """Clear the screen and redraw the full table state with players side-by-side."""
     clear_terminal()
     print_game_header(round_num=round_num)
@@ -161,7 +165,8 @@ def print_table(player_list, active_player_index=None, dealer_reveal=False, roun
     natural_boxes = []
     natural_widths = []
     for player, hide, is_active in player_info:
-        box = render_player_box(player, hide_first_card=hide, is_active=is_active)
+        override = dealer_hole_card_override if player.player_type == "dealer" else None
+        box = render_player_box(player, hide_first_card=hide, is_active=is_active, first_card_override=override)
         natural_boxes.append(box)
         natural_widths.append(_visible_len(box[0]))
 
@@ -263,11 +268,24 @@ def print_blackjack_banner(player_name):
     print(f"\n{GREEN}{top}\n{mid}\n{bot}{RESET}\n")
 
 
-def print_dealer_reveal():
-    """Print a separator announcing the dealer is revealing their hand."""
-    label = " Dealer Reveals "
-    side = (HEADER_WIDTH - len(label)) // 2
-    print("\n" + "\u2500" * side + label + "\u2500" * (HEADER_WIDTH - side - len(label)))
+def animate_dealer_reveal(player_list, round_num):
+    """Animate the dealer's hole card peeling back row by row."""
+    import time
+    from .gameutils.card_display import partial_reveal_lines
+
+    dealer = player_list[-1]
+    hole_card = dealer.hands[0].cards[0]
+
+    time.sleep(0.3)  # Brief pause on current face-down state
+
+    for n in range(1, 3):  # n=1: top row revealed; n=2: top two rows revealed
+        override = partial_reveal_lines(hole_card, n)
+        print_table(player_list, dealer_reveal=False, round_num=round_num,
+                    dealer_hole_card_override=override)
+        time.sleep(0.25)
+
+    # Final frame: full reveal with score shown
+    print_table(player_list, dealer_reveal=True, round_num=round_num)
 
 
 def _print_stats_footer(player):

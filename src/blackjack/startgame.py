@@ -1,5 +1,4 @@
 import random
-import time
 
 import typer
 from typing_extensions import Annotated
@@ -15,7 +14,7 @@ from .utils import print_game_over
 from .utils import print_bust_message
 from .utils import prompt_play_again
 from .utils import print_blackjack_banner
-from .utils import print_dealer_reveal
+from .utils import animate_dealer_reveal
 from .gameutils.deckofcards import DeckOfCards
 from .gameutils.hand import Hand
 from .gameutils.player import Player
@@ -484,10 +483,8 @@ class BlackjackGame:
                 new_card = self.deck.get_card()
                 self.dealer.add_card_to_hand(new_card)
 
-            # Dealer reveal with dramatic pause.
-            print_dealer_reveal()
-            time.sleep(0.8)
-            print_table(self.player_list, dealer_reveal=True, round_num=round_num)
+            # Animate dealer hole card reveal.
+            animate_dealer_reveal(self.player_list, round_num)
 
             # Calculate payouts and record history.
             for player in self.player_list[:-1]:
