@@ -8,9 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install in development mode (includes pytest)
 pip install -e ".[dev]"
 
-# Run the game
+# Run the game (settings chosen interactively)
 blackjack-app
-blackjack-app --nplayers 2 --ndecks 2
+blackjack-app --anonymous   # skip session storage
+blackjack-app --hints       # show basic strategy hints
 
 # Run tests
 pytest -v
@@ -53,7 +54,7 @@ The CLI entry point is `src/blackjack/cli.py`, which uses Typer to expose the `s
 - `_print_stats_footer(player)` — persistent W/L/P/BJ/Streak/Cash line shown below the table during active play.
 - `print_results_table()`, `print_player_stats()`, `print_game_over()`, `print_bust_message()`, `prompt_play_again()` — round-end and session display helpers.
 
-**`startgame.py`** contains the `BlackjackGame` class (game loop in `__init__`), `get_player_action()` for input parsing via `ACTION_MAP`, `get_player_bet()` for the bet prompt (Enter repeats last bet), `calculate_payout(hand, dealer_hand)` for net cash changes, `get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double)` for the hints system, and the `startgame()` Typer command.
+**`startgame.py`** contains the `BlackjackGame` class (game loop in `__init__`), `get_player_action()` for input parsing via `ACTION_MAP`, `get_player_bet()` for the bet prompt (Enter repeats last bet), `calculate_payout(hand, dealer_hand)` for net cash changes, `get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double)` for the hints system, and the `startgame()` Typer command. Session/identity helpers: `_resolve_player()` (OS username + DB lookup), `_show_session_menu()` (resume/new/quit with arrow-key nav), `_get_new_session_config()` (interactive setup screen for ndecks/cash/minbid/opponents).
 
 ## Testing
 

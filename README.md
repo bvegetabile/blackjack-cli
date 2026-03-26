@@ -30,31 +30,60 @@ pip install -e ".[dev]"
 Start a game from the terminal:
 
 ```bash
-# Play solo against the dealer (default: $1000 cash, $25 minimum bet)
+# Play (your name and session history are saved by default)
 blackjack-app
 
-# Customize starting cash and minimum bet
-blackjack-app --init-cash 500 --minbid 10
+# Play without saving any session data
+blackjack-app --anonymous
 
-# Play with computer opponents and multiple decks
-blackjack-app --nplayers 3 --ndecks 2
+# Override your player name
+blackjack-app --player-name "Alice"
 
 # Enable basic strategy hints
 blackjack-app --hints
 
-# Show hand history log when you quit or go broke
+# Show a hand-by-hand history log when you quit
 blackjack-app --history
 
-# Control the speed of the dealer hole-card reveal animation (seconds per row; 0 = instant)
+# Control the speed of the dealer reveal animation (seconds per row; 0 = instant)
 blackjack-app --animation-delay 0.2
 ```
 
+### Sessions
+
+On first launch the game confirms your name (pulled from your OS username) and creates a
+player profile. After that, each time you start you'll see a session menu where you can:
+
+- **Resume** a previous session — restores your round number, shoe state, cash, and stats
+- **Start a new session** — configure the table fresh with arrow-key navigation
+- **Quit**
+
+The new session setup screen lets you pick your table settings using `↑↓` to move between
+rows and `←→` to change values, then `Enter` to start:
+
+| Setting | Options | Default |
+|---------|---------|---------|
+| Decks in shoe | 1, 2, 4, 6, 8 | 6 |
+| Starting cash | $250 – $5,000 | $1,000 |
+| Minimum bet | $5 – $100 | $25 |
+| CPU opponents | 0 – 3 | 0 |
+
+Use `--anonymous` to skip identity and session storage entirely and jump straight to setup.
+
 ### Betting
 
-Each round begins with a bet. Press Enter to repeat your last bet (or use the table minimum on the first round). Your cash balance is shown in your player box.
+Each round begins with a bet. Press Enter to repeat your last bet (or use the table minimum
+on the first round). Your cash balance is shown in your player box.
 
 - **Game over**: If you can't afford the minimum bet, you'll see a session summary and can restart with fresh cash
 - **Computer players**: Bet randomly; if they go broke, there's a 50% chance they buy back in
+
+### What You'll See
+
+- **Player boxes** show each hand with ASCII card art, score, and current bet. Your box has a cyan border when it's your turn, and a ▲ or ▼ arrow after rounds where your cash changed.
+- **Stats footer** below the table tracks your running session: wins, losses, pushes, blackjacks, current streak, and cash balance.
+- **Dealer reveal** animates row by row when the hole card is flipped. Speed is controlled by `--animation-delay`.
+- **Blackjack banner** appears when you or another player hits a natural blackjack.
 
 ### Game Controls
 
@@ -67,6 +96,7 @@ Each turn you'll see your hand displayed as ASCII cards with your current score 
 | `D` | Double Down — double your bet, draw one card, and stand (first two cards only) |
 | `P` | Split — split a pair into two hands, each with its own bet (matching ranks only) |
 | `R` | Surrender — forfeit half your bet and end the hand (first action only) |
+| `?` | Hint — show a basic strategy recommendation for your current hand |
 | `Q` | Quit — exit the game |
 
 ### Payouts
@@ -79,9 +109,12 @@ Each turn you'll see your hand displayed as ASCII cards with your current score 
 | Lose / Bust | Bet lost |
 | Surrender | Half bet returned |
 
-### Insurance
+### Insurance & Even Money
 
-When the dealer's visible card is an Ace, you'll be offered insurance at half your bet. If the dealer has blackjack, insurance pays 2:1.
+When the dealer's visible card is an Ace:
+
+- **Even money**: If you have a natural blackjack, you'll be offered a guaranteed 1:1 payout now rather than risking a push if the dealer also has blackjack.
+- **Insurance**: Otherwise, you can buy insurance for half your bet. If the dealer has blackjack, insurance pays 2:1; if not, the insurance bet is lost.
 
 ### Rules
 
@@ -89,13 +122,17 @@ When the dealer's visible card is an Ace, you'll be offered insurance at half yo
 - Beat the dealer's hand without going over 21
 - Dealer stands on all 17s (S17)
 - Split aces receive one card each and auto-stand (no re-splitting aces)
+- You can split up to 4 hands total
+- Surrender is only available as your very first action (before any hit, double, or split)
 - Computer players use the same strategy as the dealer (hit on 16 or less)
 - The shoe persists across rounds and reshuffles at ~75% penetration
 
 ### Learning Features
 
-- **`--hints`**: Shows basic strategy recommendations before each action (e.g., "Hint: Basic strategy says HIT")
+- **`--hints`**: Displays the recommended action and the reasoning behind it automatically before each prompt (e.g., "Hint: DOUBLE — 11 is the best doubling hand — any 10-value card gives you 21")
+- **`?` key**: Available at any action prompt for an on-demand hint — shows the strategy recommendation without consuming your turn
 - **`--history`**: Displays a hand-by-hand log at the end of your session showing cards, bets, outcomes, and payouts
+- **`--animation-delay`**: Controls how fast the dealer's hole card is revealed (default 0.4 seconds per row; set to 0 to skip animation entirely)
 
 ## Running Tests
 
