@@ -725,8 +725,40 @@ def _resolve_player(db, player_name_arg):
     return username, user_id
 
 
+def _read_key():
+    """Read one keypress from stdin without requiring Enter.
+
+    Returns a string: 'up', 'down', 'left', 'right', 'enter', 'q',
+    or the raw character for anything else. Raises KeyboardInterrupt
+    on Ctrl-C.
+    """
+    import sys
+    import tty
+    import termios
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.buffer.read(1)
+        if ch == b'\x03':
+            raise KeyboardInterrupt
+        if ch == b'\r' or ch == b'\n':
+            return 'enter'
+        if ch == b'\x1b':
+            ch2 = sys.stdin.buffer.read(1)
+            if ch2 == b'[':
+                ch3 = sys.stdin.buffer.read(1)
+                return {b'A': 'up', b'B': 'down',
+                        b'C': 'right', b'D': 'left'}.get(ch3, 'unknown')
+            return 'escape'
+        return ch.decode('utf-8', errors='replace')
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 def _show_session_menu(db, user_id, username):
-    """Display the session menu.
+    """Display the session menu with arrow-key navigation.
 
     Returns one of:
       ('resume', session_id, resume_data)
@@ -738,58 +770,74 @@ def _show_session_menu(db, user_id, username):
 
     active = db.get_active_sessions(user_id)
 
-    clear_terminal()
-    print_game_header()
-    print()
-
-    if active:
-        print(f"  Welcome back, {CYAN}{username}{RESET}\n")
-        print(f"  {'Active sessions':}")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        for i, s in enumerate(active, 1):
-            try:
-                dt = datetime.fromisoformat(s["started_at"]).strftime("%b %d")
-            except Exception:
-                dt = "?"
-            cash_str = f"${s['cash']:,}" if s.get("cash") is not None else "?"
-            ndecks = s.get("ndecks") or 1
-            deck_str = f"{ndecks}d"
-            print(f"  [{i}] {dt}  Round {s['round_num']:>3}  Cash {cash_str:<8}  ({deck_str})")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print(f"  {CYAN}[N]{RESET} New session   {CYAN}[Q]{RESET} Quit")
-        choice = input("\n  >>> ").strip().lower()
-
-        if choice == 'q':
-            return 'quit', None, None
+    # Build the list of rows: sessions first, then New / Quit.
+    rows = []
+    for s in active:
         try:
-            idx = int(choice) - 1
-            selected = active[idx]
-            resume_data = db.load_session(selected["session_id"])
-            return 'resume', selected["session_id"], resume_data
-        except (ValueError, IndexError):
-            pass  # fall through to new session
+            dt = datetime.fromisoformat(s["started_at"]).strftime("%b %d")
+        except Exception:
+            dt = "?"
+        cash_str = f"${s['cash']:,}" if s.get("cash") is not None else "?"
+        deck_str = f"{s.get('ndecks') or 1}d"
+        label = f"Resume  {dt}  Round {s['round_num']:>3}  Cash {cash_str:<8}  ({deck_str})"
+        rows.append(('session', s, label))
+    rows.append(('new',  None, "New session"))
+    rows.append(('quit', None, "Quit"))
 
-    return 'new', None, None
+    sel = 0
+
+    while True:
+        clear_terminal()
+        print_game_header()
+        print()
+        if active:
+            print(f"  Welcome back, {CYAN}{username}{RESET}\n")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        for i, (kind, _, label) in enumerate(rows):
+            if i == sel:
+                print(f"  {CYAN}\u25b6 {label}{RESET}")
+            else:
+                print(f"    {label}")
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print("  \u2191\u2193 navigate   Enter select")
+
+        key = _read_key()
+        if key == 'up':
+            sel = (sel - 1) % len(rows)
+        elif key in ('down', '\t'):
+            sel = (sel + 1) % len(rows)
+        elif key == 'enter':
+            kind, s, _ = rows[sel]
+            if kind == 'quit':
+                return 'quit', None, None
+            if kind == 'new':
+                return 'new', None, None
+            resume_data = db.load_session(s["session_id"])
+            return 'resume', s["session_id"], resume_data
+        elif key == 'q':
+            return 'quit', None, None
 
 
-_DECK_OPTS = [1, 2, 4, 6, 8]
-_CASH_OPTS = [250, 500, 1000, 2000, 5000]
-_BET_OPTS  = [5, 10, 25, 50, 100]
-_OPP_OPTS  = [0, 1, 2, 3]
+_SETTINGS = [
+    # (label,           cfg_key,    options,                       default, format_fn)
+    ("Decks in shoe",  "ndecks",   [1, 2, 4, 6, 8],              6,      str),
+    ("Starting cash",  "init_cash", [250, 500, 1000, 2000, 5000], 1000,   lambda v: f"${v:,}"),
+    ("Minimum bet",    "minbid",   [5, 10, 25, 50, 100],          25,     lambda v: f"${v}"),
+    ("CPU opponents",  "_opp",     [0, 1, 2, 3],                  0,      str),
+]
 
 
 def _get_new_session_config():
-    """Interactive new-session setup screen. Returns a config dict.
+    """Interactive new-session setup with arrow-key navigation.
 
-    The user presses [1-4] to cycle through each setting, [Enter] to start.
+    ↑↓ move between settings  ←→ cycle values  Enter to start.
+    Returns a config dict.
     """
     from .utils import CYAN, RESET, HEADER_WIDTH
 
-    cfg = {"ndecks": 6, "init_cash": 1000, "minbid": 25, "nplayers": 1}
-
-    def _cycle(value, opts):
-        idx = opts.index(value) if value in opts else 0
-        return opts[(idx + 1) % len(opts)]
+    # Current index into each setting's option list.
+    indices = [opts.index(default) for _, _, opts, default, _ in _SETTINGS]
+    sel = 0  # currently focused row
 
     while True:
         clear_terminal()
@@ -798,25 +846,46 @@ def _get_new_session_config():
         print("  " + "\u2500" * (HEADER_WIDTH - 2))
         print("  NEW SESSION SETUP")
         print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print(f"  {CYAN}[1]{RESET} Decks in shoe:    {cfg['ndecks']}")
-        print(f"  {CYAN}[2]{RESET} Starting cash:    ${cfg['init_cash']:,}")
-        print(f"  {CYAN}[3]{RESET} Minimum bet:      ${cfg['minbid']}")
-        print(f"  {CYAN}[4]{RESET} CPU opponents:    {cfg['nplayers'] - 1}")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        choice = input(
-            f"  {CYAN}[1-4]{RESET} Cycle setting   {CYAN}[Enter]{RESET} Start  >>> "
-        ).strip()
 
-        if choice == '':
-            return cfg
-        elif choice == '1':
-            cfg['ndecks'] = _cycle(cfg['ndecks'], _DECK_OPTS)
-        elif choice == '2':
-            cfg['init_cash'] = _cycle(cfg['init_cash'], _CASH_OPTS)
-        elif choice == '3':
-            cfg['minbid'] = _cycle(cfg['minbid'], _BET_OPTS)
-        elif choice == '4':
-            cfg['nplayers'] = _cycle(cfg['nplayers'] - 1, _OPP_OPTS) + 1
+        for i, (label, _, opts, _, fmt) in enumerate(_SETTINGS):
+            # Show all options inline; highlight the current one.
+            opts_display = "  ".join(
+                f"{CYAN}{fmt(v)}{RESET}" if j == indices[i] else fmt(v)
+                for j, v in enumerate(opts)
+            )
+            if i == sel:
+                marker = f"{CYAN}\u25b6{RESET}"
+                label_display = f"{CYAN}{label}{RESET}"
+            else:
+                marker = " "
+                label_display = label
+            print(f"  {marker} {label_display:<18}  {opts_display}")
+
+        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print("  \u2191\u2193 move   \u2190\u2192 change value   Enter start")
+
+        key = _read_key()
+        if key == 'up':
+            sel = (sel - 1) % len(_SETTINGS)
+        elif key == 'down':
+            sel = (sel + 1) % len(_SETTINGS)
+        elif key == 'right':
+            indices[sel] = (indices[sel] + 1) % len(_SETTINGS[sel][2])
+        elif key == 'left':
+            indices[sel] = (indices[sel] - 1) % len(_SETTINGS[sel][2])
+        elif key == 'enter':
+            break
+        elif key == 'q':
+            break  # treat q as "start with current settings"
+
+    cfg = {}
+    for i, (_, key, opts, _, _) in enumerate(_SETTINGS):
+        val = opts[indices[i]]
+        if key == '_opp':
+            cfg['nplayers'] = val + 1
+        else:
+            cfg[key] = val
+    return cfg
 
 
 def startgame(
