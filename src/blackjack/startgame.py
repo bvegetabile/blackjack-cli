@@ -196,12 +196,13 @@ def get_basic_strategy_hint(hand, dealer_upcard_rank, can_split, can_double):
 
 class BlackjackGame:
     def __init__(self, nplayers=1, ndecks=1, minbid=25, init_cash=1000, init_shuffled=True,
-                 show_hints=False, show_history=False):
+                 show_hints=False, show_history=False, animation_delay=0.4):
         self.nplayers = nplayers
         self.minbid = minbid
         self.init_cash = init_cash
         self.show_hints = show_hints
         self.show_history = show_history
+        self.animation_delay = animation_delay
         self.hand_history = []
 
         # Create players once — they persist across rounds.
@@ -484,7 +485,7 @@ class BlackjackGame:
                 self.dealer.add_card_to_hand(new_card)
 
             # Animate dealer hole card reveal.
-            animate_dealer_reveal(self.player_list, round_num)
+            animate_dealer_reveal(self.player_list, round_num, self.animation_delay)
 
             # Calculate payouts and record history.
             for player in self.player_list[:-1]:
@@ -546,6 +547,7 @@ def startgame(
     init_cash: Annotated[int, typer.Option(help="Players initial wallet size.")] = 1000,
     hints: Annotated[bool, typer.Option(help="Show basic strategy hints")] = False,
     history: Annotated[bool, typer.Option(help="Show hand history at game over")] = False,
+    animation_delay: Annotated[float, typer.Option(help="Seconds per row in dealer reveal animation (0 = instant)")] = 0.4,
 ):
     # Clean inputs.
     if ndecks > 1:
@@ -581,4 +583,5 @@ def startgame(
         init_cash=init_cash,
         show_hints=hints,
         show_history=history,
+        animation_delay=animation_delay,
     )

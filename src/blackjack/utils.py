@@ -268,21 +268,25 @@ def print_blackjack_banner(player_name):
     print(f"\n{GREEN}{top}\n{mid}\n{bot}{RESET}\n")
 
 
-def animate_dealer_reveal(player_list, round_num):
-    """Animate the dealer's hole card peeling back row by row."""
+def animate_dealer_reveal(player_list, round_num, animation_delay=0.4):
+    """Animate the dealer's hole card peeling back row by row.
+
+    animation_delay controls seconds per row reveal. Set to 0 to skip
+    animation entirely (useful for simulations or fast play).
+    """
     import time
     from .gameutils.card_display import partial_reveal_lines
 
     dealer = player_list[-1]
     hole_card = dealer.hands[0].cards[0]
 
-    time.sleep(0.5)  # Pause on face-down state before animation starts
+    time.sleep(animation_delay * 1.25)  # Pause on face-down state before animation starts
 
     for n in range(1, 3):  # n=1: top row revealed; n=2: top two rows revealed
         override = partial_reveal_lines(hole_card, n)
         print_table(player_list, dealer_reveal=False, round_num=round_num,
                     dealer_hole_card_override=override)
-        time.sleep(0.4)
+        time.sleep(animation_delay)
 
     # Final frame: full reveal with score shown
     print_table(player_list, dealer_reveal=True, round_num=round_num)
