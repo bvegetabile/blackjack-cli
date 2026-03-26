@@ -492,9 +492,18 @@ def read_key():
 
 def prompt_play_again():
     """Arrow-key play-again prompt. Returns '' to play again or 'q' to quit."""
+    import sys
     options = ["Play again", "Quit"]
+    # Lines rendered each pass: blank + separator + 2 options + hint = 5
+    LINES = 5
     sel = 0
+    first = True
     while True:
+        if not first:
+            # Erase previous render: move up LINES lines then clear to end of screen.
+            sys.stdout.write(f"\033[{LINES}F\033[J")
+            sys.stdout.flush()
+        first = False
         print("\n" + "\u2500" * MENU_WIDTH)
         for i, opt in enumerate(options):
             if i == sel:
