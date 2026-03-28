@@ -1,12 +1,16 @@
 from .card import Card, RANK_MAPPING, SHAPE_MAPPING
+from . import palette
 
-# ANSI color codes
+# Legacy color constants — kept for backward compatibility with tests.
+# Display functions read from palette.active instead.
 RED = "\033[91m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 BLUE = "\033[94m"
 CYAN = "\033[96m"
 RESET = "\033[0m"
+AMBER = "\033[33m"
+DIM = "\033[2m"
 
 RED_SUITS = {"H", "D"}
 
@@ -24,7 +28,8 @@ def _suit_str(card):
 def _colorize(text, suit):
     """Wrap text in ANSI color based on suit."""
     if suit in RED_SUITS:
-        return f"{RED}{text}{RESET}"
+        p = palette.active
+        return f"{p.card_red}{text}{p.reset}"
     return text
 
 
@@ -53,8 +58,9 @@ def card_to_lines(card):
 
 
 def face_down_lines():
-    """Return 5-line list for a face-down card with blue tint."""
-    fill = f"{BLUE}\u2593\u2593\u2593\u2593\u2593{RESET}"
+    """Return 5-line list for a face-down card."""
+    p = palette.active
+    fill = f"{p.card_back}\u2593\u2593\u2593\u2593\u2593{p.reset}"
     return [
         "\u250c\u2500\u2500\u2500\u2500\u2500\u2510",
         f"\u2502{fill}\u2502",
