@@ -1,4 +1,5 @@
 from blackjack.gameutils.card import Card
+from blackjack.gameutils import palette
 from blackjack.gameutils.card_display import (
     card_to_lines,
     face_down_lines,
@@ -24,16 +25,16 @@ def test_card_to_lines_top_bottom_border():
 def test_card_red_suit_has_color():
     card = Card("H", 1)
     lines = card_to_lines(card)
-    # Heart suit should contain red ANSI code
-    assert RED in lines[2]
-    assert RESET in lines[2]
+    # Heart suit should contain the palette's card_red ANSI code
+    assert palette.active.card_red in lines[2]
+    assert palette.active.reset in lines[2]
 
 
 def test_card_black_suit_no_red():
     card = Card("S", 1)
     lines = card_to_lines(card)
-    # Spade suit should not contain red ANSI code
-    assert RED not in lines[2]
+    # Spade suit should not contain the card_red color
+    assert palette.active.card_red not in lines[2]
 
 
 def test_face_down_returns_five_lines():
@@ -42,9 +43,8 @@ def test_face_down_returns_five_lines():
 
 
 def test_face_down_has_blue():
-    from blackjack.gameutils.card_display import BLUE
     lines = face_down_lines()
-    assert BLUE in lines[1]
+    assert palette.active.card_back in lines[1]
 
 
 def test_render_hand_single_card():
@@ -62,10 +62,9 @@ def test_render_hand_multiple_cards():
 
 
 def test_render_hand_hide_first():
-    from blackjack.gameutils.card_display import BLUE
     result = render_hand([Card("H", 1), Card("S", 13)], hide_first=True)
-    # First card should be face-down (contains blue)
-    assert BLUE in result
+    # First card should be face-down (contains card_back color)
+    assert palette.active.card_back in result
 
 
 def test_render_empty_hand():
@@ -105,15 +104,13 @@ def test_render_player_box_active_marker():
     p.add_card_to_hand(Card("H", 1))
     p.add_card_to_hand(Card("S", 13))
 
-    from blackjack.gameutils.card_display import CYAN
     box = render_player_box(p, is_active=True)
-    assert CYAN in box[0]
+    assert palette.active.highlight in box[0]
 
 
 def test_render_player_box_dealer_hidden():
     from blackjack.gameutils.player import Player
     from blackjack.utils import render_player_box
-    from blackjack.gameutils.card_display import BLUE
 
     p = Player(player_id=None, player_type="dealer")
     p.add_card_to_hand(Card("H", 1))
@@ -121,5 +118,5 @@ def test_render_player_box_dealer_hidden():
 
     box = render_player_box(p, hide_first_card=True)
     box_str = "\n".join(box)
-    assert BLUE in box_str
+    assert palette.active.card_back in box_str
     assert "Score: ???" in box_str
