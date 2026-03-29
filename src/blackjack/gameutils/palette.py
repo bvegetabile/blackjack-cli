@@ -26,8 +26,8 @@ WARM_FELT = Palette("warm-felt", "Warm Felt",
                      neutral=222, card_red=203, card_back=60)
 
 ART_DECO = Palette("art-deco", "Art Deco",
-                    chrome=178, highlight=230, win=78, loss=168,
-                    neutral=222, card_red=168, card_back=236)
+                    chrome=214, highlight=230, win=35, loss=161,
+                    neutral=187, card_red=161, card_back=236)
 
 MIDNIGHT = Palette("midnight", "Midnight",
                     chrome=146, highlight=117, win=115, loss=175,
