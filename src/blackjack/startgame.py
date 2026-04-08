@@ -16,9 +16,11 @@ from .utils import print_bust_message
 from .utils import prompt_play_again
 from .utils import print_blackjack_banner
 from .utils import animate_dealer_reveal
+from .utils import center_offset, MENU_WIDTH
 from .gameutils.deckofcards import DeckOfCards
 from .gameutils.hand import Hand
 from .gameutils.player import Player
+from .gameutils import palette
 
 ACTION_MAP = {
     '': 'hit', 'h': 'hit', 'hit': 'hit',
@@ -41,21 +43,21 @@ def get_player_action(can_split=False, can_double=False, can_surrender=False, sc
             dealer_upcard_str=dealer_upcard_str,
             player_score=score,
         )
-        prompt = ">>> "
-        raw = input(prompt).strip().lower()
+        offset = center_offset(MENU_WIDTH)
+        raw = input(f"{offset}  >>> ").strip().lower()
         action = ACTION_MAP.get(raw)
 
         if action is None:
-            print("Invalid input. Try again.")
+            print(f"{offset}  Invalid input. Try again.")
             continue
         if action == 'double' and not can_double:
-            print("Double down is not available.")
+            print(f"{offset}  Double down is not available.")
             continue
         if action == 'split' and not can_split:
-            print("Split is not available.")
+            print(f"{offset}  Split is not available.")
             continue
         if action == 'surrender' and not can_surrender:
-            print("Surrender is not available.")
+            print(f"{offset}  Surrender is not available.")
             continue
 
         return action  # includes 'hint' — caller handles it by looping back
@@ -69,28 +71,29 @@ def get_player_bet(player, minbid, default_bet=None, round_num=None):
     default_bet = min(default_bet, player.cash)
     default_bet = max(default_bet, minbid)
 
-    from .utils import MENU_WIDTH
+    p = palette.active
+    offset = center_offset(MENU_WIDTH)
     if round_num is not None:
-        print("\u2500" * MENU_WIDTH)
-        print(f"  Round {round_num}  |  Cash: ${player.cash}")
+        print(offset + p.chrome + "\u2500" * MENU_WIDTH + p.reset)
+        print(offset + f"  Round {round_num}  |  Cash: ${player.cash}")
 
     while True:
         try:
-            raw = input(f"  Bet (enter=${default_bet}) >>> ").strip()
+            raw = input(f"{offset}  Bet (enter=${default_bet}) >>> ").strip()
             if raw.lower() in ('q', 'quit'):
                 return None
             if raw == '':
                 return default_bet
             bet = int(raw)
             if bet < minbid:
-                print(f"Minimum bet is ${minbid}.")
+                print(f"{offset}  Minimum bet is ${minbid}.")
                 continue
             if bet > player.cash:
-                print(f"You only have ${player.cash}.")
+                print(f"{offset}  You only have ${player.cash}.")
                 continue
             return bet
         except ValueError:
-            print("Enter a number.")
+            print(f"{offset}  Enter a number.")
 
 
 def calculate_payout(hand, dealer_hand):
@@ -262,7 +265,8 @@ class BlackjackGame:
                     self._print_history()
                 if self.db and self.session_id:
                     self.db.complete_session(self.session_id)
-                input("\n  [Enter] Return to menu >>> ")
+                _offset = center_offset(MENU_WIDTH)
+                input(f"\n{_offset}  [Enter] Return to menu >>> ")
                 break
 
             # Eliminate broke computer players or give them a chance to buy back in.
@@ -285,7 +289,7 @@ class BlackjackGame:
             # Reshuffle shoe if penetration is high.
             reshuffled_this_round = False
             if self.deck.needs_reshuffle():
-                print("  Reshuffling the shoe...")
+                print(f"{center_offset(MENU_WIDTH)}  Reshuffling the shoe...")
                 self.deck.reshuffle()
                 reshuffled_this_round = True
 
@@ -344,9 +348,10 @@ class BlackjackGame:
                 human_hand = human.hands[0]
                 even_money_taken = False
                 if human_hand.is_natural_blackjack():
+                    _offset = center_offset(MENU_WIDTH)
                     em_input = input(
-                        f"  Dealer shows Ace — you have Blackjack!\n"
-                        f"  [E] Even Money (take +${human_hand.bet} guaranteed now)  [N] Decline >>> "
+                        f"{_offset}  Dealer shows Ace \u2014 you have Blackjack!\n"
+                        f"{_offset}  [E] Even Money (take +${human_hand.bet} guaranteed now)  [N] Decline >>> "
                     ).strip().lower()
                     em_action = 'yes' if em_input in ('e', 'even', 'even money') else 'no'
                     if self.db and self.session_id and round_id:
@@ -369,7 +374,8 @@ class BlackjackGame:
                     # Regular insurance offer for human.
                     ins_cost = human_hand.bet // 2
                     if ins_cost > 0 and ins_cost <= human.cash:
-                        ins_input = input(f"Insurance? Costs ${ins_cost} (y/n) >>> ").strip().lower()
+                        _offset = center_offset(MENU_WIDTH)
+                        ins_input = input(f"{_offset}  Insurance? Costs ${ins_cost} (y/n) >>> ").strip().lower()
                         ins_action = 'yes' if ins_input in ('y', 'yes') else 'no'
                         if self.db and self.session_id and round_id:
                             self.db.log_event(
@@ -393,7 +399,7 @@ class BlackjackGame:
             # Check for dealer natural blackjack.
             if self.dealer.hands[0].is_natural_blackjack():
                 print_table(self.player_list, dealer_reveal=True, round_num=round_num)
-                print("Dealer has blackjack!")
+                print(f"{center_offset(MENU_WIDTH)}  Dealer has blackjack!")
 
                 # Settle insurance.
                 for player in self.player_list[:-1]:
@@ -448,8 +454,9 @@ class BlackjackGame:
                     can_double = hand.can_double() and human.cash >= hand.bet
                     can_surrender = is_first_action_on_hand and first_action and len(human.hands) == 1
 
+                    _offset = center_offset(MENU_WIDTH)
                     if len(human.hands) > 1:
-                        print(f"  Playing Hand {hand_idx + 1} of {len(human.hands)}")
+                        print(f"{_offset}  Playing Hand {hand_idx + 1} of {len(human.hands)}")
 
                     # Show basic strategy hint.
                     if self.show_hints:
@@ -457,7 +464,7 @@ class BlackjackGame:
                         hint, reason = get_basic_strategy_hint(
                             hand, dealer_upcard.rank, can_split, can_double
                         )
-                        print(f"  Hint: {hint} — {reason}")
+                        print(f"{_offset}  Hint: {hint} \u2014 {reason}")
 
                     dealer_upcard = self.dealer.hands[0].cards[1]
                     upcard_rank = dealer_upcard.rank if dealer_upcard.rank <= 10 else 10
@@ -475,7 +482,7 @@ class BlackjackGame:
                         hint, reason = get_basic_strategy_hint(
                             hand, dealer_upcard.rank, can_split, can_double
                         )
-                        print(f"\n  Strategy: {hint} — {reason}\n")
+                        print(f"\n{center_offset(MENU_WIDTH)}  Strategy: {hint} \u2014 {reason}\n")
                         continue
 
                     is_first_action_on_hand = False
@@ -664,21 +671,22 @@ class BlackjackGame:
 
     def _print_history(self):
         """Print hand history log."""
-        print("\n" + "=" * 70)
-        print("HAND HISTORY")
-        print("=" * 70)
-        print(f"  {'Rd':>3}  {'Your Hand':<20} {'Dealer':<20} {'Bet':>5}  {'Result':<10} {'Payout':>7}  {'Cash':>6}")
-        print("-" * 70)
+        _off = center_offset(70)
+        print("\n" + _off + "=" * 70)
+        print(_off + "HAND HISTORY")
+        print(_off + "=" * 70)
+        print(_off + f"  {'Rd':>3}  {'Your Hand':<20} {'Dealer':<20} {'Bet':>5}  {'Result':<10} {'Payout':>7}  {'Cash':>6}")
+        print(_off + "-" * 70)
         for h in self.hand_history:
             cards = ", ".join(h["player_cards"])
             dcards = ", ".join(h["dealer_cards"])
             payout = h["payout"]
             payout_str = f"+${payout}" if payout > 0 else f"-${abs(payout)}" if payout < 0 else "$0"
             print(
-                f"  {h['round']:>3}  {cards:<20} {dcards:<20} ${h['bet']:>4}  "
+                _off + f"  {h['round']:>3}  {cards:<20} {dcards:<20} ${h['bet']:>4}  "
                 f"{h['outcome']:<10} {payout_str:>7}  ${h['cash']:>5}"
             )
-        print("=" * 70)
+        print(_off + "=" * 70)
 
 
 def _resolve_player(db, player_name_arg):
@@ -689,7 +697,7 @@ def _resolve_player(db, player_name_arg):
     Arrow-key navigation is used for the confirmation and switch menus.
     """
     import getpass
-    from .utils import CYAN, RESET, HEADER_WIDTH, read_key
+    from .utils import HEADER_WIDTH, read_key
 
     if player_name_arg:
         username = player_name_arg
@@ -699,20 +707,23 @@ def _resolve_player(db, player_name_arg):
     candidate = getpass.getuser()
 
     # Confirmation screen: "Play as X" / "Switch player"
+    from .utils import center_offset as _co
+    p = palette.active
     confirm_options = [f"Play as {candidate}", "Switch player"]
     sel = 0
     while True:
         clear_terminal()
-        print_game_header()
+        print_game_header(vpad_content_height=12)
+        _off = _co(HEADER_WIDTH)
         print()
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
         for i, opt in enumerate(confirm_options):
             if i == sel:
-                print(f"  {CYAN}\u25b6 {opt}{RESET}")
+                print(_off + f"  {p.highlight}\u25b6 {opt}{p.reset}")
             else:
-                print(f"    {opt}")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print("  \u2191\u2193 navigate   Enter select")
+                print(_off + f"    {opt}")
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
+        print(_off + f"  {p.dim}\u2191\u2193 navigate   Enter select{p.reset}")
         key = read_key()
         if key in ('up', 'down'):
             sel = (sel + 1) % len(confirm_options)
@@ -730,18 +741,20 @@ def _resolve_player(db, player_name_arg):
     sel = 0
     while True:
         clear_terminal()
-        print_game_header()
+        print_game_header(vpad_content_height=10 + len(switch_options))
+        _off = _co(HEADER_WIDTH)
+        p = palette.active
         print()
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print("  SELECT PLAYER")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
+        print(_off + f"  {p.chrome}SELECT PLAYER{p.reset}")
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
         for i, opt in enumerate(switch_options):
             if i == sel:
-                print(f"  {CYAN}\u25b6 {opt}{RESET}")
+                print(_off + f"  {p.highlight}\u25b6 {opt}{p.reset}")
             else:
-                print(f"    {opt}")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print("  \u2191\u2193 navigate   Enter select")
+                print(_off + f"    {opt}")
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
+        print(_off + f"  {p.dim}\u2191\u2193 navigate   Enter select{p.reset}")
         key = read_key()
         if key == 'up':
             sel = (sel - 1) % len(switch_options)
@@ -751,9 +764,10 @@ def _resolve_player(db, player_name_arg):
             if sel == len(switch_options) - 1:
                 # "New player..." — fall back to line input
                 clear_terminal()
-                print_game_header()
+                print_game_header(vpad_content_height=8)
+                _off = _co(HEADER_WIDTH)
                 print()
-                username = input("  New player name >>> ").strip() or candidate
+                username = input(f"{_off}  New player name >>> ").strip() or candidate
             else:
                 username = switch_options[sel]
             user_id = db.get_or_create_user(username)
@@ -777,7 +791,9 @@ def _show_session_menu(db, user_id, username):
       ('quit',   None,       None)
     """
     from datetime import datetime
-    from .utils import CYAN, RESET, HEADER_WIDTH
+    from .utils import HEADER_WIDTH, center_offset as _co
+
+    p = palette.active
 
     active = db.get_active_sessions(user_id)
 
@@ -792,7 +808,7 @@ def _show_session_menu(db, user_id, username):
             dt = "?"
         cash_str = f"${s['cash']:,}" if s.get("cash") is not None else "?"
         deck_str = f"{s.get('ndecks') or 1}d"
-        label = f"Resume  {dt}  Round {s['round_num']:>3}  Cash {cash_str:<8}  ({deck_str})"
+        label = f"Resume  {dt:<16}  Round {s['round_num']:>3}  Cash {cash_str:<8}  ({deck_str})"
         rows.append(('session', s, label))
     rows.append(('new',  None, "New session"))
     rows.append(('quit', None, "Quit"))
@@ -801,18 +817,21 @@ def _show_session_menu(db, user_id, username):
 
     while True:
         clear_terminal()
-        print_game_header()
+        p = palette.active
+        welcome_lines = 2 if active else 0
+        print_game_header(vpad_content_height=10 + len(rows) + welcome_lines)
+        _off = _co(HEADER_WIDTH)
         print()
         if active:
-            print(f"  Welcome back, {CYAN}{username}{RESET}\n")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+            print(_off + f"  Welcome back, {p.highlight}{username}{p.reset}\n")
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
         for i, (kind, _, label) in enumerate(rows):
             if i == sel:
-                print(f"  {CYAN}\u25b6 {label}{RESET}")
+                print(_off + f"  {p.highlight}\u25b6 {label}{p.reset}")
             else:
-                print(f"    {label}")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print("  \u2191\u2193 navigate   Enter select")
+                print(_off + f"    {label}")
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
+        print(_off + f"  {p.dim}\u2191\u2193 navigate   Enter select{p.reset}")
 
         key = _read_key()
         if key == 'up':
@@ -837,45 +856,56 @@ _SETTINGS = [
     ("Starting cash",  "init_cash", [250, 500, 1000, 2000, 5000], 1000,   lambda v: f"${v:,}"),
     ("Minimum bet",    "minbid",   [5, 10, 25, 50, 100],          25,     lambda v: f"${v}"),
     ("CPU opponents",  "_opp",     [0, 1, 2, 3],                  0,      str),
+    ("Color theme",    "_palette", ["warm-felt", "art-deco", "midnight"], "warm-felt", str),
 ]
 
 
-def _get_new_session_config():
+def _get_new_session_config(initial_palette=None):
     """Interactive new-session setup with arrow-key navigation.
 
-    ↑↓ move between settings  ←→ cycle values  Enter to start.
+    \u2191\u2193 move between settings  \u2190\u2192 cycle values  Enter to start.
     Returns a config dict.
     """
-    from .utils import CYAN, RESET, HEADER_WIDTH
+    from .utils import HEADER_WIDTH, center_offset as _co
 
     # Current index into each setting's option list.
     indices = [opts.index(default) for _, _, opts, default, _ in _SETTINGS]
+
+    # Override palette default if initial_palette was provided.
+    if initial_palette:
+        palette_opts = _SETTINGS[4][2]  # the options list for the palette row
+        if initial_palette in palette_opts:
+            indices[4] = palette_opts.index(initial_palette)
+            palette.set_palette(initial_palette)
+
     sel = 0  # currently focused row
 
     while True:
+        p = palette.active
         clear_terminal()
-        print_game_header()
+        print_game_header(vpad_content_height=14 + len(_SETTINGS))
+        _off = _co(HEADER_WIDTH)
         print()
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print("  NEW SESSION SETUP")
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
+        print(_off + f"  {p.chrome}NEW SESSION SETUP{p.reset}")
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
 
         for i, (label, _, opts, _, fmt) in enumerate(_SETTINGS):
             # Show all options inline; highlight the current one.
             opts_display = "  ".join(
-                f"{CYAN}{fmt(v)}{RESET}" if j == indices[i] else fmt(v)
+                f"{p.highlight}{fmt(v)}{p.reset}" if j == indices[i] else fmt(v)
                 for j, v in enumerate(opts)
             )
             if i == sel:
-                marker = f"{CYAN}\u25b6{RESET}"
-                label_display = f"{CYAN}{label}{RESET}"
+                marker = f"{p.highlight}\u25b6{p.reset}"
+                label_display = f"{p.highlight}{label}{p.reset}"
             else:
                 marker = " "
                 label_display = label
-            print(f"  {marker} {label_display:<18}  {opts_display}")
+            print(_off + f"  {marker} {label_display:<18}  {opts_display}")
 
-        print("  " + "\u2500" * (HEADER_WIDTH - 2))
-        print("  \u2191\u2193 move   \u2190\u2192 change value   Enter start")
+        print(_off + "  " + p.chrome + "\u2500" * (HEADER_WIDTH - 2) + p.reset)
+        print(_off + f"  {p.dim}\u2191\u2193 move   \u2190\u2192 change value   Enter start{p.reset}")
 
         key = _read_key()
         if key == 'up':
@@ -884,8 +914,14 @@ def _get_new_session_config():
             sel = (sel + 1) % len(_SETTINGS)
         elif key == 'right':
             indices[sel] = (indices[sel] + 1) % len(_SETTINGS[sel][2])
+            # Live preview: apply palette change immediately.
+            if _SETTINGS[sel][1] == '_palette':
+                palette.set_palette(_SETTINGS[sel][2][indices[sel]])
         elif key == 'left':
             indices[sel] = (indices[sel] - 1) % len(_SETTINGS[sel][2])
+            # Live preview: apply palette change immediately.
+            if _SETTINGS[sel][1] == '_palette':
+                palette.set_palette(_SETTINGS[sel][2][indices[sel]])
         elif key == 'enter':
             break
         elif key == 'q':
@@ -896,6 +932,8 @@ def _get_new_session_config():
         val = opts[indices[i]]
         if key == '_opp':
             cfg['nplayers'] = val + 1
+        elif key == '_palette':
+            palette.set_palette(val)
         else:
             cfg[key] = val
     return cfg
@@ -913,9 +951,16 @@ def startgame(
     player_name: Annotated[str, typer.Option(
         help="Your player name (default: OS username)"
     )] = None,
+    palette_name: Annotated[str, typer.Option(
+        "--palette", help="Color theme: warm-felt, art-deco, midnight"
+    )] = None,
 ):
     """Play blackjack. Game settings are chosen interactively at session start."""
     from .utils import HEADER_WIDTH
+
+    # Apply palette from CLI flag if provided.
+    if palette_name:
+        palette.set_palette(palette_name)
 
     # Resolve identity and open DB once (outside the game loop).
     db = None
@@ -940,12 +985,12 @@ def startgame(
             if action == 'resume':
                 cfg = resume_data  # config embedded in session row
             else:
-                cfg = _get_new_session_config()
+                cfg = _get_new_session_config(initial_palette=palette_name)
                 cfg['animation_delay'] = animation_delay
                 session_id = db.create_session(user_id, cfg)
                 resume_data = None
         else:
-            cfg = _get_new_session_config()
+            cfg = _get_new_session_config(initial_palette=palette_name)
 
         nplayers   = cfg.get('nplayers', 1)
         ndecks     = cfg.get('ndecks', 6)
@@ -956,7 +1001,7 @@ def startgame(
 
         # Show game start summary.
         clear_terminal()
-        print_game_header()
+        print_game_header(vpad_content_height=8)
         opp_str = f"{n_opp} CPU opponent{'s' if n_opp != 1 else ''}"
         deck_str = f"{ndecks} deck{decks_plural}"
         print_statement_with_deco(
